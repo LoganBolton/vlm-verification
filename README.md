@@ -40,7 +40,6 @@ python src/inference.py \
     --solver_model_name Qwen/Qwen3-0.6B \
     --verifier_model_name Qwen/Qwen3-0.6B \
     --dataset_name gsm \
-    --dataset_subset_ratio 0.01 \
     --output_dir result
 ```
 
@@ -65,7 +64,6 @@ python src/rejection_sampling.py \
     --solver_model_name Qwen/Qwen3-0.6B \
     --verifier_model_name Qwen/Qwen3-0.6B \
     --dataset_name gsm \
-    --dataset_subset_ratio 0.01 \
     --max_attempts 5 \
     --output_dir result
 ```
@@ -150,7 +148,6 @@ python src/inference.py \
     --no_verify \
     --solver_model_name Qwen/Qwen3-0.6B \
     --dataset_name gsm \
-    --dataset_subset_ratio 0.01 \
     --output_dir result
 
 # Step 2: Test different verifiers quickly (loads from solver cache automatically)
@@ -158,7 +155,6 @@ python src/inference.py \
     --solver_model_name Qwen/Qwen3-0.6B \
     --verifier_model_name Qwen/Qwen3-1.7B \
     --dataset_name gsm \
-    --dataset_subset_ratio 0.01 \
     --output_dir result
 ```
 
