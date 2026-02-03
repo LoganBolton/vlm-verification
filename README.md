@@ -6,12 +6,12 @@
 
 This codebase provides a framework for studying how the end performance of a solver-verifier system depends on factors like model family, model size, post-training, task type, and more. The frameworks supports:
 
-- **Both Real-World and Synthetic Tasks**: Real-world tasks include GSM8K, AIME, MMLU, CommonsenseQA, and GPQA. Synthetic tasks include SAT, Sudoku, Matrix Multiplication (with generation scripts in `src/generate_problems`).
-- **Large Suite of Open-Source Models**: Post-trained models from Llama3, Qwen2.5, Qwen3, and DeepSeek-R1 families. Base models from Llama3, Qwen2.5, Qwen3 families.
-- **Solver and Verifier Evaluation Metrics**: Solver accuracy. Verifier accuracy, TPR, FPR, FNR, Precision, Recall, F1, Gain, etc.
-- **Rejection sampling**: Solver can iteratively re-solve problems that fail test-time verification.
-- **Embedding analysis**: Compute pairwise similarity between model outputs across different LLMs.
-- **Automatic caching**: Efficiently reuse solver outputs when experimenting with different verifier configurations.
+- **Both Real-World and Synthetic Tasks**: Real-world tasks include GSM8K, AIME, MMLU, CommonsenseQA, and GPQA. Synthetic tasks include SAT, Sudoku, Matrix Multiplication (with generation scripts in `src/generate_problems`). See [Supported Datasets](#supported-datasets).
+- **Large Suite of Open-Source Models**: Post-trained models from Llama3, Qwen2.5, Qwen3, and DeepSeek-R1 families. Base models from Llama3, Qwen2.5, Qwen3 families. See [Supported Models](#supported-models).
+- **Solver and Verifier Evaluation Metrics**: Solver accuracy. Verifier accuracy, TPR, FPR, FNR, Precision, Recall, F1, Gain, etc. See `src/inference.py`.
+- **Rejection sampling**: Solver can iteratively re-solve problems that fail test-time verification. See `src/rejection_sampling.py`.
+- **Embedding analysis**: Compute pairwise similarity between model outputs across different LLMs. See `src/compute_embedding.py`.
+- **Automatic caching**: Efficiently reuse solver outputs when experimenting with different verifier configurations. See `src/solver_cache.py`.
 
 ## Installation
 
