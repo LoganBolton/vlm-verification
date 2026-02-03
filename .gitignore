@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+result/
+*claude*
+*CLAUDE*
+solver_cache

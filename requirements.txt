@@ -1,0 +1,6 @@
+transformers==4.56.1
+vllm @ https://github.com/vllm-project/vllm/releases/download/v0.7.2/vllm-0.7.2+cu118-cp38-abi3-manylinux1_x86_64.whl#sha256=844d467ced94ba6b45a1627386f898da5b54b1fa9f8fd8894998c812696216f3
+datasets==4.0.0
+accelerate==1.4.0
+matplotlib
+seaborn
