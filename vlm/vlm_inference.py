@@ -137,6 +137,11 @@ def parse_args() -> argparse.Namespace:
 
 def run_vllm_backend(args, rendered_prompts: List[str], image_paths: List[str]) -> List[str]:
     """Generate with vLLM (requires a vLLM build matching the GPU driver's CUDA version)."""
+    # flashinfer's top-k/top-p sampler JIT-compiles a CUDA kernel at runtime, which needs
+    # a full CUDA toolkit (nvcc / CUDA_HOME). We only have the driver + pip torch, so force
+    # vLLM's native PyTorch sampler instead. Must be set before importing vllm.
+    os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+
     import torch
     from vllm import LLM, SamplingParams
     from PIL import Image
