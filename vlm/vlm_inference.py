@@ -9,23 +9,33 @@ The procedure follows the normal LLM solver exactly:
               -> format `prompts/inference_prompt.md` with the question
               -> wrap in a single user message (now image + text)
               -> apply the model's chat template (add_generation_prompt=True)
-              -> vLLM generate
-              -> extract_float_answer -> exact_match -> accuracy
+              -> generate (transformers or vLLM) -> save raw outputs
 
-Before anything is sent to the model, every constructed prompt is written to
-`<output_dir>/prompts.jsonl`, one record per line, so the exact image and exact
-prompt going to the model can be inspected:
+This script does NOT judge correctness. It only records what the model produced.
+Scoring (answer extraction + accuracy) is a separate step: `vlm/score_results.py`.
+
+Each run writes ONE self-describing JSON file named `<dataset>_<model>_<time>.json`
+(e.g. `countbench_Qwen3-VL-2B-Instruct_20260607-223800.json`) so results are easy to
+track down later. The file contains two top-level keys:
 
     {
-        "id": 0,
-        "image": "/abs/path/to/data/countbench/images/042.jpg",
-        "question": "How many headsets are there in the image?",
-        "answer": 10,
-        "text_prompt": "Please reason step by step, ...\n\nHow many headsets ...",
-        "rendered_prompt": "<|im_start|>user\n<|vision_start|><|image_pad|>..."
+      "metadata": {                # what data, what prompt, what model, what params
+        "timestamp": "...",
+        "dataset": {"name", "data_dir", "num_examples", "dataset_subset_ratio", ...},
+        "model":   {"name", "backend"},
+        "generation_params": {"temperature", "top_p", "top_k", "max_new_tokens", ...},
+        "prompt":  {"template", "sample_text_prompt", "sample_rendered_prompt", ...},
+        "args":    { ...full argparse namespace... }
+      },
+      "records": [ {                # per example: the exact prompt fed in + raw output
+        "id", "image", "question", "answer",   # answer = ground truth, for the scorer
+        "text_prompt", "rendered_prompt",
+        "solver_full_output"
+      }, ... ]
     }
 
-Use `--dump_prompts_only` to stop after writing prompts.jsonl (no model is loaded).
+Use `--dump_prompts_only` to stop after building prompts: it writes
+`<dataset>_<model>_<time>_prompts.json` (metadata + every prompt, no model loaded).
 
 Verifier is intentionally out of scope for now.
 """
@@ -38,16 +48,9 @@ import json
 import math
 import os
 import re
-import sys
 
-# Reuse the exact answer-extraction and matching logic from the normal LLM pipeline.
-SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-sys.path.insert(0, SRC_DIR)
-from answer_extractors import extract_float_answer  # noqa: E402
-from oracle_verifiers import exact_match  # noqa: E402
-
-from datasets import Dataset  # noqa: E402
-from transformers import AutoProcessor, set_seed  # noqa: E402
+from datasets import Dataset
+from transformers import AutoProcessor, set_seed
 
 
 def load_image_qa(data_dir: str) -> Dataset:
@@ -228,6 +231,52 @@ def run_transformers_backend(args, prompt_records: List[Dict[str, Any]]) -> List
     return outputs
 
 
+def _slug(text: str) -> str:
+    """Filesystem-safe slug (keep alnum, dot, dash; collapse everything else to '-')."""
+    return re.sub(r"[^A-Za-z0-9.\-]+", "-", text).strip("-")
+
+
+def build_metadata(args, dataset_name: str, num_examples: int, inference_prompt: str,
+                   sample_record: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+    """Assemble a self-describing metadata block so any run can be understood in isolation.
+
+    Captures: the data used, the exact prompt fed to the model (template + a rendered
+    sample), which model ran, and the generation parameters.
+    """
+    do_sample = args.solver_temperature > 0.0
+    return {
+        "timestamp": timestamp,
+        "dataset": {
+            "name": dataset_name,
+            "data_dir": os.path.abspath(args.data_dir),
+            "num_examples": num_examples,
+            "dataset_subset_ratio": args.dataset_subset_ratio,
+            "shuffle_seed": args.seed,
+        },
+        "model": {
+            "name": args.solver_model_name,
+            "backend": args.backend,
+        },
+        "generation_params": {
+            "do_sample": do_sample,
+            "temperature": args.solver_temperature,
+            "top_p": args.solver_top_p,
+            "top_k": args.solver_top_k,
+            "max_new_tokens": args.solver_max_new_tokens,
+            "n_samples": args.solver_n_samples,
+            "seed": args.seed,
+        },
+        "prompt": {
+            "template_file": f"{args.prompt_dir}/inference_prompt.md",
+            "template": inference_prompt,
+            "sample_text_prompt": sample_record["text_prompt"],
+            "sample_rendered_prompt": sample_record["rendered_prompt"],
+            "sample_image": sample_record["image"],
+        },
+        "args": vars(args),
+    }
+
+
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
@@ -275,18 +324,26 @@ def main() -> None:
             "rendered_prompt": rendered,
         })
 
-    prompts_path = os.path.join(args.output_dir, "prompts.jsonl")
-    with open(prompts_path, "w", encoding="utf-8") as f:
-        for r in prompt_records:
-            f.write(json.dumps(r) + "\n")
-    print(f"Wrote {len(prompt_records)} prompts to {prompts_path}")
+    # Identity for this run: dataset_model_time -> easy to find/sort later.
+    dataset_name = args.dataset_name or os.path.basename(os.path.normpath(args.data_dir))
+    model_short = args.solver_model_name.split("/")[-1]
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_id = f"{_slug(dataset_name)}_{_slug(model_short)}_{timestamp}"
+
+    metadata = build_metadata(args, dataset_name, len(dataset), inference_prompt,
+                              prompt_records[0], timestamp)
+
     print("============================ Sample prompt begin ============================")
     print(f"image: {prompt_records[0]['image']}")
     print(prompt_records[0]["rendered_prompt"])
     print("============================ Sample prompt end ============================")
 
     if args.dump_prompts_only:
-        print("--dump_prompts_only set; skipping model load and generation.")
+        # Prompts-only artifact: metadata + every constructed prompt, no generation.
+        out_path = os.path.join(args.output_dir, f"{run_id}_prompts.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"metadata": metadata, "prompts": prompt_records}, f, indent=4)
+        print(f"--dump_prompts_only set; wrote {len(prompt_records)} prompts to {out_path}")
         return
 
     # ------------------------------ SOLVER ------------------------------------------
@@ -299,43 +356,35 @@ def main() -> None:
     print(outputs[0])
     print("============================ Sample solver output end ============================")
 
-    # ------------------------------ EVALUATE SOLVER ----------------------------------
+    # ------------------------------ COLLECT RAW OUTPUTS ------------------------------
+    # This file holds raw model generations only. Correctness/accuracy is intentionally
+    # NOT computed here -- scoring is a separate step (see vlm/score_results.py) so the
+    # generation artifact and the evaluation can be regenerated/changed independently.
     solver_total = len(dataset) * args.solver_n_samples
     assert len(outputs) == solver_total, (len(outputs), solver_total)
 
     records = []
-    solver_correct_count, bad_solve_count = 0, 0
     for output_i, output in enumerate(outputs):
         data_i = output_i // args.solver_n_samples
-        extracted_answer = extract_float_answer(output)
-        if extracted_answer is None:
-            bad_solve_count += 1
-        is_correct = exact_match(data_row=dataset[data_i], solver_extracted_answer=extracted_answer)
-        solver_correct_count += is_correct
+        pr = prompt_records[data_i]
         records.append({
-            "data_row": {k: v for k, v in dataset[data_i].items()},
-            "solver_correct": is_correct,
+            "id": pr["id"],
+            "image": pr["image"],
+            "question": pr["question"],
+            "answer": pr["answer"],          # ground truth, kept for the scorer
+            # exact prompt fed to the model for this example
+            "text_prompt": pr["text_prompt"],
+            "rendered_prompt": pr["rendered_prompt"],
             "solver_full_output": output,
-            "solver_extracted_answer": extracted_answer,
         })
 
-    metrics = {
-        "solver": {
-            "total": solver_total,
-            "bad_count": bad_solve_count,
-            "correct_count": solver_correct_count,
-            "incorrect_count": solver_total - solver_correct_count,
-            "accuracy": solver_correct_count / solver_total,
-        },
-    }
+    # Single self-describing artifact: metadata + per-example raw generations.
+    out_path = os.path.join(args.output_dir, f"{run_id}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump({"metadata": metadata, "records": records}, f, indent=4)
 
-    with open(f"{args.output_dir}/record.json", "w") as f:
-        json.dump(records, f, indent=4)
-    with open(f"{args.output_dir}/metrics.json", "w") as f:
-        json.dump(metrics, f, indent=4)
-
-    print("\n============================ Final Metrics ============================")
-    pprint(metrics)
+    print(f"\nSaved {len(records)} raw generations to {out_path}")
+    print("Run vlm/score_results.py on this file to compute correctness.")
 
 
 if __name__ == "__main__":
