@@ -146,12 +146,16 @@ def run_vllm_backend(args, rendered_prompts: List[str], image_paths: List[str]) 
     from vllm import LLM, SamplingParams
     from PIL import Image
 
+    # Some VLMs declare a huge max context (e.g. Qwen3-VL: 262144) whose KV cache won't
+    # fit on a single 24GB GPU. Optionally cap it; our prompts are only a few k tokens.
+    max_model_len = getattr(args, "max_model_len", None)
     model = LLM(
         model=args.solver_model_name,
         dtype=torch.bfloat16,
         tensor_parallel_size=torch.cuda.device_count(),
         trust_remote_code=True,
         gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=max_model_len,
         seed=args.seed,
     )
     vllm_inputs = [
