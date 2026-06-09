@@ -109,6 +109,9 @@ def parse_args() -> argparse.Namespace:
 
     # vllm server initialization
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.9)
+    parser.add_argument("--max_model_len", type=int, default=None,
+                        help="Cap vLLM context length (needed for huge-context models like "
+                             "Qwen3-VL whose full KV cache won't fit on one GPU)")
 
     # solver sampling params (match src/inference.py defaults)
     parser.add_argument("--solver_max_new_tokens", type=int, default=8192)
