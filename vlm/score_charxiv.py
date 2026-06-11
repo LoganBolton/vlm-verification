@@ -26,7 +26,7 @@ Usage:
 """
 
 from pprint import pprint
-from typing import Optional, Set
+from typing import List, Set
 import argparse
 import json
 import os
@@ -38,54 +38,70 @@ SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, SRC_DIR)
 from answer_extractors import get_final_box_match  # noqa: E402
 
-EXTRACTOR_NAME = "charxiv_relaxed_normalized_match"
-
-_STOP = {"the", "a", "an", "is", "are", "of", "to", "in", "on", "at", "and", "or",
-         "approximately", "about", "around", "value", "answer", "it", "as", "for"}
+EXTRACTOR_NAME = "charxiv_finalanswer_normalized_match_v2"
 
 
 def normalize(s: str) -> str:
-    """Lowercase, fold unicode, reduce punctuation to spaces, collapse whitespace."""
+    """Lowercase, fold unicode, reduce punctuation to spaces, collapse whitespace.
+
+    Hyphens and decimal points are kept inside tokens so "round-robin-combo" and "0.13"
+    survive as single tokens.
+    """
     s = unicodedata.normalize("NFKC", str(s)).lower()
     s = s.replace("’", "'").replace("−", "-")
     s = re.sub(r"[^a-z0-9.\- ]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
-def sig_tokens(s: str) -> Set[str]:
-    return {t for t in normalize(s).split() if t and t not in _STOP}
+def tokens(s: str) -> List[str]:
+    return [t for t in normalize(s).split() if t]
 
 
 def numbers(s: str) -> Set[str]:
-    # Strip trailing dots/dashes so "0.13." -> "0.13"; keep signed decimals.
+    # Whole-number tokens only, so "3" never matches inside "30" or "2017".
     return {n.strip(".-") for n in re.findall(r"-?\d+\.?\d*", normalize(s)) if n.strip(".-")}
 
 
 def extract_answer(text: str) -> str:
-    """The string we display as the model's answer: boxed content if any, else a tail snippet."""
+    """The model's FINAL answer only -- the last \\boxed{...} if present, else the last
+    non-empty line. We deliberately do NOT scan the whole response: the gold answer often
+    appears inside the chain-of-thought (e.g. a model enumerates every option) even when the
+    model's actual answer is different, which caused rampant false positives."""
     boxed = get_final_box_match(text)
     if boxed is not None:
         return boxed.strip()
-    tail = text.strip().splitlines()[-1] if text.strip() else ""
-    return tail[-120:]
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
+
+
+def _contiguous(sub: List[str], seq: List[str]) -> bool:
+    """True if token list `sub` appears as a contiguous run inside `seq`."""
+    if not sub or len(sub) > len(seq):
+        return False
+    return any(seq[i:i + len(sub)] == sub for i in range(len(seq) - len(sub) + 1))
 
 
 def is_correct(gold: str, response: str) -> bool:
-    """Relaxed match of a free-text gold answer against a full model response."""
-    g = normalize(gold)
+    """Match the gold answer against the model's FINAL answer only (not the reasoning).
+
+    Correct if any of: exact normalized equality; the gold tokens appear verbatim as a
+    contiguous run in the answer (handles "(b) OPT" vs gold "OPT"); the gold and answer have
+    the same token *set* (order-independent, e.g. "case, det" vs "det, case"); or both reduce
+    to the same set of whole numbers (e.g. gold "0.13" vs answer "lambda_L = 0.13").
+    """
+    pred = extract_answer(response)
+    g, p = normalize(gold), normalize(pred)
     if not g:
         return False
-    boxed = get_final_box_match(response)
-    cand = normalize(boxed) if boxed is not None else normalize(response)
-    full = normalize(response)
-
-    if g in cand or g in full:
+    if g == p:
         return True
-    gt = sig_tokens(gold)
-    if gt and gt.issubset(sig_tokens(response)):
+    gt, pt = tokens(gold), tokens(pred)
+    if gt and _contiguous(gt, pt):
         return True
-    gnums = numbers(gold)
-    if gnums and gnums.issubset(numbers(response)):
+    if gt and set(gt) == set(pt):
+        return True
+    gn, pn = numbers(gold), numbers(pred)
+    if gn and gn == pn:
         return True
     return False
 

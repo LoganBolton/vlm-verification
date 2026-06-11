@@ -24,8 +24,7 @@ import sys
 VLM_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, VLM_DIR)
 from vlm_verify import truncate_response, build_verifier_messages, extract_verdict, VERDICT_EXTRACTOR  # noqa: E402
-
-from transformers import AutoProcessor  # noqa: E402
+from vlm_inference import load_chat_renderer  # noqa: E402
 
 
 def recompute_metrics(records):
@@ -61,10 +60,36 @@ def recompute_metrics(records):
     }
 
 
+def load_solver_scores(score_files):
+    """Map solver_model_name -> {example_id: (solver_correct, solver_extracted_answer)}.
+
+    Lets us refresh a verify file's labels after the solver run was *re-scored* (e.g. with a
+    fixed answer-matcher), so verifier metrics are recomputed against the corrected oracle
+    without re-running any model.
+    """
+    by_model = {}
+    for f in score_files:
+        for g in sorted(glob.glob(f)):
+            d = json.load(open(g))
+            model = d.get("metadata", {}).get("model", {}).get("name")
+            if not model:
+                continue
+            m = by_model.setdefault(model, {})
+            for r in d["records"]:
+                m[r["id"]] = (bool(r["solver_correct"]), r.get("solver_extracted_answer"))
+    return by_model
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+", help="verify_*.json files (globs ok)")
+    ap.add_argument("--solver_scores", nargs="*", default=[],
+                    help="Re-scored solver *_scores.json files; refreshes solver_correct/"
+                         "solver_extracted_answer (joined by solver model + example id) "
+                         "before recomputing verifier metrics.")
     args = ap.parse_args()
+
+    solver_scores = load_solver_scores(args.solver_scores)
 
     paths = []
     for f in args.files:
@@ -80,24 +105,27 @@ def main():
         max_chars = md["verification_params"]["max_response_chars"]
 
         if verifier_model not in processors:
-            processors[verifier_model] = AutoProcessor.from_pretrained(verifier_model, trust_remote_code=True)
-        processor = processors[verifier_model]
+            processors[verifier_model] = load_chat_renderer(verifier_model)
+        render_chat = processors[verifier_model]
+
+        # Optionally refresh oracle labels from a re-scored solver run for this solver model.
+        label_map = solver_scores.get(md.get("solver_model"), {})
 
         new_records = []
         for rec in d["records"]:
             response = truncate_response(rec["solver_full_output"], max_chars)
             vtext = template.format(question=rec["question"], response=response)
-            rendered = processor.apply_chat_template(
-                build_verifier_messages(vtext), tokenize=False, add_generation_prompt=True
-            )
+            rendered = render_chat(build_verifier_messages(vtext))
+            sc, extracted = label_map.get(
+                rec["id"], (rec["solver_correct"], rec.get("solver_extracted_answer")))
             new_records.append({
                 "id": rec["id"],
                 "image": rec["image"],
                 "question": rec["question"],
                 "answer": rec["answer"],
                 "solver_full_output": rec["solver_full_output"],
-                "solver_extracted_answer": rec.get("solver_extracted_answer"),
-                "solver_correct": rec["solver_correct"],
+                "solver_extracted_answer": extracted,
+                "solver_correct": sc,
                 "verifier_prompt": vtext,
                 "verifier_rendered_prompt": rendered,
                 "verifier_response": rec["verifier_response"],

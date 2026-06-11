@@ -43,7 +43,7 @@ VLM_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SRC_DIR)
 sys.path.insert(0, VLM_DIR)
 from answer_extractors import get_final_box_match  # noqa: E402
-from vlm_inference import run_vllm_backend, run_transformers_backend, _slug  # noqa: E402
+from vlm_inference import run_vllm_backend, run_transformers_backend, _slug, load_chat_renderer  # noqa: E402
 
 from transformers import AutoProcessor, set_seed  # noqa: E402
 
@@ -111,6 +111,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verifier_temperature", type=float, default=0.7)
     parser.add_argument("--verifier_top_k", type=int, default=-1)
     parser.add_argument("--verifier_top_p", type=float, default=0.9)
+    parser.add_argument("--verifier_repetition_penalty", type=float, default=1.0,
+                        help="vLLM repetition penalty; 1.1 tames the repetition loops of "
+                             "small InternVL3.5 models")
     parser.add_argument("--max_response_chars", type=int, default=6000,
                         help="Uniform truncation budget for the embedded solver response")
 
@@ -118,6 +121,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_model_len", type=int, default=None,
                         help="Cap vLLM context length (needed for huge-context models like "
                              "Qwen3-VL whose full KV cache won't fit on one GPU)")
+    parser.add_argument("--disable_chunked_mm", action="store_true",
+                        help="See vlm_inference.py: works around vLLM mm-chunking crashes")
     parser.add_argument("--output_dir", type=str, default="vlm/result")
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
@@ -135,7 +140,7 @@ def main() -> None:
     with open(f"{args.prompt_dir}/verification_prompt.md", "r") as f:
         verification_prompt = f.read()
 
-    processor = AutoProcessor.from_pretrained(args.verifier_model_name, trust_remote_code=True)
+    render_chat = load_chat_renderer(args.verifier_model_name)
     verifier_short = args.verifier_model_name.split("/")[-1]
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -158,9 +163,7 @@ def main() -> None:
         for rec in records:
             response = truncate_response(rec["solver_full_output"], args.max_response_chars)
             vtext = verification_prompt.format(question=rec["question"], response=response)
-            rendered = processor.apply_chat_template(
-                build_verifier_messages(vtext), tokenize=False, add_generation_prompt=True
-            )
+            rendered = render_chat(build_verifier_messages(vtext))
             all_rendered.append(rendered)
             all_vtexts.append(vtext)
             all_image_paths.append(rec["image"])
@@ -185,9 +188,11 @@ def main() -> None:
         solver_max_new_tokens=args.verifier_max_new_tokens,
         solver_top_k=args.verifier_top_k,
         solver_top_p=args.verifier_top_p,
+        solver_repetition_penalty=args.verifier_repetition_penalty,
         solver_n_samples=1,
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
+        disable_chunked_mm=args.disable_chunked_mm,
         seed=args.seed,
     )
     if args.backend == "vllm":
@@ -262,6 +267,7 @@ def main() -> None:
                 "top_p": args.verifier_top_p,
                 "top_k": args.verifier_top_k,
                 "max_new_tokens": args.verifier_max_new_tokens,
+                "repetition_penalty": args.verifier_repetition_penalty,
                 "max_response_chars": args.max_response_chars,
                 "seed": args.seed,
             },

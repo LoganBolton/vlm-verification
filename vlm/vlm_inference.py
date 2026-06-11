@@ -50,7 +50,7 @@ import os
 import re
 
 from datasets import Dataset
-from transformers import AutoProcessor, set_seed
+from transformers import set_seed
 
 
 def load_image_qa(data_dir: str) -> Dataset:
@@ -73,6 +73,42 @@ def load_image_qa(data_dir: str) -> Dataset:
             r["image_path"] = os.path.abspath(os.path.join(data_dir, r["image"]))
             records.append(r)
     return Dataset.from_list(records)
+
+
+def load_chat_renderer(model_name: str):
+    """Return render(messages) -> prompt string for the model.
+
+    Normally the AutoProcessor owns the multimodal chat template. Models without a
+    processor class (e.g. the original non-HF InternVL checkpoints, whose vLLM code path
+    we use because vLLM's interns1.py path for the -HF conversions emits corrupted logits)
+    fall back to plain ChatML with a literal `<image>` placeholder -- InternVL's native
+    format, which vLLM expands to the real image tokens.
+    """
+    from transformers import AutoProcessor as _AP
+    try:
+        processor = _AP.from_pretrained(model_name, trust_remote_code=True)
+
+        def render(messages):
+            return processor.apply_chat_template(messages, tokenize=False,
+                                                 add_generation_prompt=True)
+        return render
+    except Exception as e:
+        print(f"[load_chat_renderer] no AutoProcessor for {model_name} ({type(e).__name__}); "
+              f"falling back to ChatML + <image> placeholder")
+
+        def render(messages):
+            parts = []
+            for m in messages:
+                texts, has_image = [], False
+                for c in m["content"]:
+                    if c["type"] == "image":
+                        has_image = True
+                    elif c["type"] == "text":
+                        texts.append(c["text"])
+                body = ("<image>\n" if has_image else "") + "\n".join(texts)
+                parts.append(f"<|im_start|>{m['role']}\n{body}<|im_end|>\n")
+            return "".join(parts) + "<|im_start|>assistant\n"
+        return render
 
 
 def build_messages(question_text: str) -> List[Dict[str, Any]]:
@@ -112,12 +148,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_model_len", type=int, default=None,
                         help="Cap vLLM context length (needed for huge-context models like "
                              "Qwen3-VL whose full KV cache won't fit on one GPU)")
+    parser.add_argument("--disable_chunked_mm", action="store_true",
+                        help="Never split one image's tokens across prefill chunks (works "
+                             "around vLLM 0.22 'Encoder cache miss' crashes, seen with "
+                             "InternVL3.5). Also declares image-only inputs, since the "
+                             "model's max VIDEO item (~29k tokens) would otherwise have to "
+                             "fit the per-step token budget.")
 
     # solver sampling params (match src/inference.py defaults)
     parser.add_argument("--solver_max_new_tokens", type=int, default=8192)
     parser.add_argument("--solver_temperature", type=float, default=0.7)
     parser.add_argument("--solver_top_k", type=int, default=-1)
     parser.add_argument("--solver_top_p", type=float, default=0.9)
+    parser.add_argument("--solver_repetition_penalty", type=float, default=1.0,
+                        help="vLLM repetition penalty. Some models (InternVL3.5 small sizes) "
+                             "degenerate into repetition loops without it; 1.1 is the value "
+                             "recommended by OpenGVLab.")
     parser.add_argument("--solver_n_samples", type=int, default=1)
 
     # backend
@@ -152,6 +198,10 @@ def run_vllm_backend(args, rendered_prompts: List[str], image_paths: List[str]) 
     # Some VLMs declare a huge max context (e.g. Qwen3-VL: 262144) whose KV cache won't
     # fit on a single 24GB GPU. Optionally cap it; our prompts are only a few k tokens.
     max_model_len = getattr(args, "max_model_len", None)
+    mm_extra = {}
+    if getattr(args, "disable_chunked_mm", False):
+        mm_extra["disable_chunked_mm_input"] = True
+        mm_extra["limit_mm_per_prompt"] = {"image": 1, "video": 0}
     model = LLM(
         model=args.solver_model_name,
         dtype=torch.bfloat16,
@@ -160,6 +210,7 @@ def run_vllm_backend(args, rendered_prompts: List[str], image_paths: List[str]) 
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=max_model_len,
         seed=args.seed,
+        **mm_extra,
     )
     vllm_inputs = [
         {"prompt": rendered, "multi_modal_data": {"image": Image.open(p).convert("RGB")}}
@@ -170,6 +221,7 @@ def run_vllm_backend(args, rendered_prompts: List[str], image_paths: List[str]) 
         max_tokens=args.solver_max_new_tokens,
         top_k=args.solver_top_k,
         top_p=args.solver_top_p,
+        repetition_penalty=getattr(args, "solver_repetition_penalty", 1.0),
         n=args.solver_n_samples,
         seed=args.seed,
     )
@@ -275,6 +327,7 @@ def build_metadata(args, dataset_name: str, num_examples: int, inference_prompt:
             "top_p": args.solver_top_p,
             "top_k": args.solver_top_k,
             "max_new_tokens": args.solver_max_new_tokens,
+            "repetition_penalty": args.solver_repetition_penalty,
             "n_samples": args.solver_n_samples,
             "seed": args.seed,
         },
@@ -313,7 +366,7 @@ def main() -> None:
 
     # The processor owns the model-specific chat template (just like the tokenizer does
     # for the normal LLM). Loading it only downloads config/tokenizer, not the weights.
-    processor = AutoProcessor.from_pretrained(args.solver_model_name, trust_remote_code=True)
+    render_chat = load_chat_renderer(args.solver_model_name)
 
     # --------------------------- BUILD + DUMP PROMPTS --------------------------------
     prompt_records = []
@@ -322,9 +375,7 @@ def main() -> None:
     for ex in dataset:
         question_text = inference_prompt.format(question=ex["question"])
         messages = build_messages(question_text)
-        rendered = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
+        rendered = render_chat(messages)
         rendered_prompts.append(rendered)
         image_paths.append(ex["image_path"])
         prompt_records.append({

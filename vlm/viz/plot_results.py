@@ -12,6 +12,7 @@ import argparse
 import glob
 import json
 import os
+import re
 
 import numpy as np
 import matplotlib
@@ -21,11 +22,37 @@ import matplotlib.pyplot as plt
 
 SHORT = {
     "Qwen/Qwen3-VL-2B-Instruct": "Qwen3-VL-2B",
+    "Qwen/Qwen3-VL-4B-Instruct": "Qwen3-VL-4B",
+    "Qwen/Qwen3-VL-8B-Instruct": "Qwen3-VL-8B",
     "google/gemma-4-E2B-it": "Gemma-4-E2B",
+    "google/gemma-4-E4B-it": "Gemma-4-E4B",
+    "google/gemma-4-12B-it": "Gemma-4-12B",
     "llava-hf/llava-1.5-7b-hf": "LLaVA-1.5-7B",
+    "llava-hf/llava-1.5-13b-hf": "LLaVA-1.5-13B",
+    "OpenGVLab/InternVL3_5-1B": "InternVL3.5-1B",
+    "OpenGVLab/InternVL3_5-2B": "InternVL3.5-2B",
+    "OpenGVLab/InternVL3_5-4B": "InternVL3.5-4B",
+    "OpenGVLab/InternVL3_5-8B": "InternVL3.5-8B",
+    "OpenGVLab/InternVL3_5-14B": "InternVL3.5-14B",
 }
-ORDER = ["Qwen3-VL-2B", "Gemma-4-E2B", "LLaVA-1.5-7B"]
-COLORS = {"Qwen3-VL-2B": "#4C72B0", "Gemma-4-E2B": "#55A868", "LLaVA-1.5-7B": "#C44E52"}
+FAMILY_ORDER = ["Qwen3-VL", "Gemma", "LLaVA", "InternVL"]
+FAMILY_COLORS = {"Qwen3-VL": "#4C72B0", "Gemma": "#55A868", "LLaVA": "#C44E52",
+                 "InternVL": "#8172B2"}
+
+
+def _family(short_name):
+    return next((f for f in FAMILY_ORDER if short_name.startswith(f)), short_name)
+
+
+def _size(short_name):
+    """Approximate parameter count for within-family ordering (E2B/2B -> 2, 14B -> 14)."""
+    m = re.search(r"(\d+)[Bb]", short_name)
+    return int(m.group(1)) if m else 0
+
+
+# Derived from the loaded grid in main() -- model sets differ per tier.
+ORDER = []
+COLORS = {}
 
 # Set in main() so titles/labels reflect the actual dataset + size being plotted.
 DATASET_LABEL = "CountBenchQA"
@@ -66,8 +93,8 @@ def fig_heatmap(cells, solver_acc, path):
     grid = np.array([[cells[(s, v)]["accuracy"] for v in ORDER] for s in ORDER])
     fig, ax = plt.subplots(figsize=(6.2, 5))
     im = ax.imshow(grid, cmap="RdYlGn", vmin=0.2, vmax=0.95)
-    ax.set_xticks(range(3)); ax.set_xticklabels(ORDER)
-    ax.set_yticks(range(3)); ax.set_yticklabels(ORDER)
+    ax.set_xticks(range(len(ORDER))); ax.set_xticklabels(ORDER)
+    ax.set_yticks(range(len(ORDER))); ax.set_yticklabels(ORDER)
     ax.set_xlabel("VERIFIER"); ax.set_ylabel("SOLVER (answers being judged)")
     for i, s in enumerate(ORDER):
         for j, v in enumerate(ORDER):
@@ -159,7 +186,13 @@ def main():
     args = ap.parse_args()
 
     cells, solver_acc, n = load_grid(args.result_dir)
-    assert len(cells) == 9, f"expected 9 verifier cells, found {len(cells)}"
+    global ORDER, COLORS
+    ORDER = sorted(solver_acc, key=lambda s: (FAMILY_ORDER.index(_family(s))
+                                              if _family(s) in FAMILY_ORDER else 99,
+                                              _size(s), s))
+    COLORS = {s: FAMILY_COLORS.get(_family(s), "#888888") for s in ORDER}
+    assert len(cells) == len(ORDER) ** 2, \
+        f"expected {len(ORDER) ** 2} verifier cells for {ORDER}, found {len(cells)}"
     DATASET_LABEL, N = args.dataset_label, n
     fig_dir = args.fig_dir
     os.makedirs(fig_dir, exist_ok=True)
