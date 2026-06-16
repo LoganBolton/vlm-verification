@@ -227,11 +227,14 @@ def run_vllm_backend(args, rendered_prompts: List[str], image_paths: List[str]) 
     )
     generations = model.generate(vllm_inputs, sampling_params)
     outputs = []
+    total_tokens = 0
     for g in generations:
         assert len(g.outputs) == args.solver_n_samples
+        total_tokens += len(g.prompt_token_ids or [])
         for o in g.outputs:
             outputs.append(o.text)
-    return outputs
+            total_tokens += len(o.token_ids)
+    return outputs, total_tokens
 
 
 def run_transformers_backend(args, prompt_records: List[Dict[str, Any]]) -> List[str]:
@@ -411,7 +414,8 @@ def main() -> None:
 
     # ------------------------------ SOLVER ------------------------------------------
     if args.backend == "vllm":
-        outputs = run_vllm_backend(args, rendered_prompts, image_paths)
+        outputs, total_tokens = run_vllm_backend(args, rendered_prompts, image_paths)
+        metadata["generation_params"]["total_tokens"] = total_tokens
     else:
         outputs = run_transformers_backend(args, prompt_records)
 

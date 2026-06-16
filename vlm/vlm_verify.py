@@ -195,8 +195,9 @@ def main() -> None:
         disable_chunked_mm=args.disable_chunked_mm,
         seed=args.seed,
     )
+    verify_total_tokens = None
     if args.backend == "vllm":
-        outputs = run_vllm_backend(backend_args, all_rendered, all_image_paths)
+        outputs, verify_total_tokens = run_vllm_backend(backend_args, all_rendered, all_image_paths)
     else:
         # transformers backend applies the chat template itself, so it needs the RAW
         # verification text (not the already-rendered prompt) plus the image path.
@@ -270,6 +271,7 @@ def main() -> None:
                 "repetition_penalty": args.verifier_repetition_penalty,
                 "max_response_chars": args.max_response_chars,
                 "seed": args.seed,
+                "total_tokens_all_pairs": verify_total_tokens,
             },
             "verdict_extractor": VERDICT_EXTRACTOR,
             "prompt": {

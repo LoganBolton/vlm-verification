@@ -38,7 +38,7 @@ SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, SRC_DIR)
 from answer_extractors import get_final_box_match  # noqa: E402
 
-EXTRACTOR_NAME = "charxiv_finalanswer_normalized_match_v2"
+EXTRACTOR_NAME = "charxiv_finalanswer_normalized_match_v3"
 
 
 def normalize(s: str) -> str:
@@ -101,7 +101,10 @@ def is_correct(gold: str, response: str) -> bool:
     if gt and set(gt) == set(pt):
         return True
     gn, pn = numbers(gold), numbers(pred)
-    if gn and gn == pn:
+    # Only trust a bare-number match when the gold answer is itself purely numeric
+    # (e.g. "0.13", "94"). Otherwise a stray number in an alphanumeric gold like
+    # "ETKI (J=50)" or "fc1" matches on the digits alone -> false positive.
+    if gn and gn == pn and not any(c.isalpha() for c in g):
         return True
     return False
 
