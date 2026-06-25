@@ -34,6 +34,20 @@ for entry in "${DATASETS[@]}"; do
   REPORT_ARGS+=(--dataset "$LABEL:$RDIR:$FIGDIR:views/$DS")
 done
 
+# Agentic-vision (zoom-tool) rollouts: auto-discover every agentic_vision/<key>/ dir
+# (e.g. countbench_c4, charxiv_c8 from the budget sweep), build one viewer page per model,
+# and link them in the report. Dirs with no <model>/records.json yet are skipped.
+for RDIR in vlm/result/agentic_vision/*/; do
+  RDIR="${RDIR%/}"
+  ls "$RDIR"/*/records.json >/dev/null 2>&1 || { echo "skip agentic $RDIR -- no records.json"; continue; }
+  DS=$(basename "$RDIR")
+  LABEL=$(echo "$DS" | sed -E 's/countbench/CountBenchQA/; s/charxiv/CharXiv/; s/_c/ crops=/')
+  VIEWDIR="vlm/viz/views/agentic_$DS"
+  echo "=== agentic viewers: $DS (limit $VIEW_LIMIT) ==="
+  $PY vlm/viz/view_agentic.py --result_dir "$RDIR" --out_dir "$VIEWDIR" --limit "$VIEW_LIMIT"
+  REPORT_ARGS+=(--agentic "$LABEL (agentic):$RDIR:views/agentic_$DS")
+done
+
 if [[ ${#REPORT_ARGS[@]} -eq 0 ]]; then
   echo "no datasets with results -- nothing to report"; exit 0
 fi

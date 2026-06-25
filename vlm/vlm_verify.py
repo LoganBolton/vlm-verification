@@ -125,6 +125,8 @@ def parse_args() -> argparse.Namespace:
                         help="See vlm_inference.py: works around vLLM mm-chunking crashes")
     parser.add_argument("--output_dir", type=str, default="vlm/result")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Cap #records judged per solver run (smoke testing only)")
     return parser.parse_args()
 
 
@@ -155,6 +157,8 @@ def main() -> None:
         with open(solver_file, "r", encoding="utf-8") as f:
             run = json.load(f)
         records = run["records"]
+        if args.limit:
+            records = records[:args.limit]
         assert all("solver_correct" in r for r in records), \
             f"{solver_file} has no solver_correct -- pass a *_scores.json file"
 

@@ -1,3 +1,6 @@
+idea
+- train another verifier model on charxiv and then see how it does on countbench?
+
 # When Does Verification Pay Off? A Closer Look at LLMs as Solution Verifiers
 
 ### [Paper](https://arxiv.org/abs/2512.02304) | [Project Page](https://agenticlearning.ai/llm-verification/)

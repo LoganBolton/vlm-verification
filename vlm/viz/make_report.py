@@ -27,6 +27,8 @@ import os
 
 SHORT = {
     "Qwen/Qwen3-VL-2B-Instruct": "Qwen3-VL-2B",
+    "Qwen/Qwen3-VL-4B-Instruct": "Qwen3-VL-4B",
+    "Qwen/Qwen3-VL-8B-Instruct": "Qwen3-VL-8B",
     "google/gemma-4-E2B-it": "Gemma-4-E2B",
     "llava-hf/llava-1.5-7b-hf": "LLaVA-1.5-7B",
 }
@@ -172,6 +174,51 @@ def dataset_section(label, result_dir, fig_dir, views_rel, out_dir):
 </section>"""
 
 
+def agentic_section(label, result_dir, views_rel, out_dir):
+    """Summary of the agentic-vision (zoom-tool) runs + links to the rollout viewers.
+
+    `result_dir` is an agentic_vision/<dataset> dir holding one <model>/metrics.json per
+    model. We show accuracy, average zooms used, and the zoom-count distribution, then
+    link each model's per-example rollout page (from view_agentic.py).
+    """
+    rows, links = [], []
+    for mpath in sorted(glob.glob(os.path.join(result_dir, "*", "metrics.json"))):
+        m = json.load(open(mpath))
+        md = m.get("metadata", {})
+        model = md.get("solver_model", os.path.basename(os.path.dirname(mpath)))
+        s = SHORT.get(model, model.split("/")[-1])
+        hist = m.get("crop_count_hist", {})
+        hist_txt = ", ".join(f"{k}:{v}" for k, v in sorted(hist.items(), key=lambda kv: int(kv[0])))
+        rows.append(
+            f"<tr><th class='rowh'>{html.escape(s)}</th>"
+            f"<td style='background:{heat(m.get('accuracy', 0))}'>{m.get('accuracy', 0):.2f}</td>"
+            f"<td>{md.get('n_problems', '—')}</td>"
+            f"<td>{m.get('avg_crops', 0):.2f}</td>"
+            f"<td>{m.get('frac_used_zoom', 0):.2f}</td>"
+            f"<td class='hist'>{html.escape(hist_txt)}</td></tr>")
+        href = os.path.join(views_rel, f"view_agentic-{s.replace('/', '_')}.html")
+        if os.path.exists(os.path.join(out_dir, href)):
+            links.append(f"<a href='{html.escape(href)}'>{html.escape(s)}</a>")
+    if not rows:
+        return ""
+    links_html = (" · ".join(links)) if links else "<span class='sub'>(run view_agentic.py)</span>"
+    table = ("<table class='grid'><thead><tr><th class='corner'>solver</th><th>accuracy</th>"
+             "<th>n</th><th>avg zooms</th><th>used zoom<br><span class='sub'>frac &ge;1 crop</span></th>"
+             "<th>zoom-count dist<br><span class='sub'>#crops:#examples</span></th></tr></thead>"
+             f"<tbody>{''.join(rows)}</tbody></table>")
+    return f"""
+<section>
+  <h2>{html.escape(label)} <span class='sub'>agentic vision — zoom tool</span></h2>
+  <p class='note'><b>Active perception:</b> the solver may call a <code>zoom</code> tool to crop and
+  magnify image regions (up to a budget), re-inspecting detail before answering. This is the third
+  comparison leg alongside the verifier grid above and pass@N self-consistency.</p>
+  <h3>Per-model summary</h3>
+  {table}
+  <h3>Per-example rollouts <span class='sub'>image with chosen zoom boxes + step-by-step tool calls</span></h3>
+  <p class='links'>{links_html}</p>
+</section>"""
+
+
 CSS = """
 :root { --bd:#dcdfe4; }
 * { box-sizing:border-box; }
@@ -193,6 +240,7 @@ table.grid td { font-variant-numeric:tabular-nums; font-weight:600; min-width:74
 table.grid .rowh, table.grid .corner { background:#f3f4f6; text-align:left; font-weight:600; }
 table.grid .sub { display:block; }
 table.grid td.na { background:#f0f0f0; color:#999; font-weight:400; }
+table.grid td.hist { font-weight:400; font-size:12px; color:#374151; }
 .figs { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .figs figure { margin:0; border:1px solid var(--bd); border-radius:8px; padding:8px; background:#fff; }
 .figs img { width:100%; height:auto; display:block; }
@@ -207,16 +255,23 @@ code { background:#f0f2f5; padding:1px 5px; border-radius:4px; font-size:.92em; 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataset", action="append", required=True,
+    ap.add_argument("--dataset", action="append", default=[],
                     help="LABEL:result_dir:fig_dir:views_rel  (repeatable)")
+    ap.add_argument("--agentic", action="append", default=[],
+                    help="LABEL:result_dir:views_rel  for agentic-vision runs (repeatable)")
     ap.add_argument("--out", default="vlm/viz/REPORT.html")
     args = ap.parse_args()
+    if not args.dataset and not args.agentic:
+        ap.error("need at least one --dataset or --agentic")
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
     sections = []
     for spec in args.dataset:
         label, result_dir, fig_dir, views_rel = spec.split(":", 3)
         sections.append(dataset_section(label, result_dir, fig_dir, views_rel, out_dir))
+    for spec in args.agentic:
+        label, result_dir, views_rel = spec.split(":", 2)
+        sections.append(agentic_section(label, result_dir, views_rel, out_dir))
 
     from datetime import datetime
     doc = f"""<!doctype html><html><head><meta charset="utf-8">

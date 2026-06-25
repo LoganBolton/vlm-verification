@@ -99,13 +99,20 @@ def load_chat_renderer(model_name: str):
         def render(messages):
             parts = []
             for m in messages:
-                texts, has_image = [], False
-                for c in m["content"]:
-                    if c["type"] == "image":
-                        has_image = True
-                    elif c["type"] == "text":
-                        texts.append(c["text"])
-                body = ("<image>\n" if has_image else "") + "\n".join(texts)
+                content = m["content"]
+                # Multi-turn agentic convs append assistant turns as plain strings
+                # (Qwen's processor accepts that); the ChatML fallback must too, else
+                # iterating the string yields chars and `c["type"]` raises TypeError.
+                if isinstance(content, str):
+                    body = content
+                else:
+                    texts, has_image = [], False
+                    for c in content:
+                        if c["type"] == "image":
+                            has_image = True
+                        elif c["type"] == "text":
+                            texts.append(c["text"])
+                    body = ("<image>\n" if has_image else "") + "\n".join(texts)
                 parts.append(f"<|im_start|>{m['role']}\n{body}<|im_end|>\n")
             return "".join(parts) + "<|im_start|>assistant\n"
         return render
