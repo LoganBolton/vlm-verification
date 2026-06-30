@@ -76,10 +76,16 @@ def main():
         tp, tn, fp, fn = v["tp"], v["tn"], v["fp"], v["fn"]
         tpr = tp / (tp + fn) if (tp + fn) else 0.0
         fpr = fp / (fp + tn) if (fp + tn) else 0.0
+        fnr = fn / (tp + fn) if (tp + fn) else 0.0   # 1 - tpr = miss rate on correct answers
+        # F1 of the ACCEPT decision (treat "verifier accepts a correct answer" as the positive
+        # class): precision_clf = tp/(tp+fp), recall_clf = tpr; f1 = harmonic mean.
+        prec_clf = tp / (tp + fp) if (tp + fp) else 0.0
+        f1 = (2 * prec_clf * tpr / (prec_clf + tpr)) if (prec_clf + tpr) > 0 else 0.0
         prec = (p * tpr) / (p * tpr + (1 - p) * fpr) if (p * tpr + (1 - p) * fpr) > 0 else p
         row = dict(solver=solver, verifier=verifier, regime=regime(solver, verifier),
                    solver_fam=family(solver), verifier_fam=family(verifier),
-                   p=p, verifier_acc=v["accuracy"], tpr=tpr, fpr=fpr, precision=prec,
+                   p=p, verifier_acc=v["accuracy"], tpr=tpr, fpr=fpr, fnr=fnr,
+                   f1=f1, precision=prec,
                    gain=prec - p, bad=v.get("bad_count", 0), total=v["total"])
         for k in ks:
             row[f"gain@{k}"] = acc_at_k(p, tpr, fpr, k) - p
@@ -89,7 +95,7 @@ def main():
         print(f"no verifier-grid files in {griddir}"); return
 
     cols = (["solver", "verifier", "regime", "solver_fam", "verifier_fam", "p",
-             "verifier_acc", "tpr", "fpr", "precision", "gain"]
+             "verifier_acc", "tpr", "fpr", "fnr", "f1", "precision", "gain"]
             + [f"gain@{k}" for k in ks] + ["bad", "total"])
     out = f"{griddir}_gain.csv"
     with open(out, "w", newline="") as fh:
@@ -104,7 +110,8 @@ def main():
     def matrix(title, fn):
         print(f"===== {title} (rows=verifier, cols=solver) =====")
         sh = lambda m: m.replace("-Instruct", "").replace("InternVL3-5", "IVL").replace("Qwen3-VL", "Q")[:9]
-        print(f"{'verif\\solv':11}" + "".join(f"{sh(s):>9}" for s in models))
+        corner = "verif\\solv"
+        print(f"{corner:11}" + "".join(f"{sh(s):>9}" for s in models))
         for vmod in models:
             line = [f"{sh(vmod):11}"]
             for smod in models:
@@ -114,15 +121,46 @@ def main():
         print()
 
     matrix("VERIFIER ACCURACY", lambda r: f"{r['verifier_acc']:.3f}")
+    matrix("VERIFIER F1 (accept-decision)", lambda r: f"{r['f1']:.3f}")
+    matrix("VERIFIER FNR (miss rate on correct)", lambda r: f"{r['fnr']:.3f}")
     matrix("VERIFIER GAIN (prec - p)", lambda r: f"{r['gain']:+.3f}")
 
     print("===== mean verifier gain by regime =====")
     byreg = defaultdict(list)
     for r in rows: byreg[r["regime"]].append(r["gain"])
+    means = {}
     for reg in ["self", "intra", "cross"]:
         g = byreg.get(reg, [])
-        if g: print(f"  {reg:6} n={len(g):2}  mean gain={sum(g)/len(g):+.3f}  "
-                    f"(min {min(g):+.3f}, max {max(g):+.3f})")
+        if g:
+            means[reg] = sum(g) / len(g)
+            print(f"  {reg:6} n={len(g):2}  mean gain={means[reg]:+.3f}  "
+                  f"(min {min(g):+.3f}, max {max(g):+.3f})")
+
+    # ---- by-regime bar figure (the paper's self/intra/cross headline) ----
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        out_dir = "vlm/result/plots"; os.makedirs(out_dir, exist_ok=True)
+        regs = [r for r in ["self", "intra", "cross"] if r in means]
+        colors = {"self": "#d62728", "intra": "#1f77b4", "cross": "#2ca02c"}
+        fig, ax = plt.subplots(figsize=(5.5, 4.5))
+        xs = range(len(regs))
+        ax.bar(xs, [means[r] for r in regs], color=[colors[r] for r in regs], alpha=0.85,
+               width=0.6)
+        for i, r in enumerate(regs):
+            ax.scatter([i] * len(byreg[r]), byreg[r], color="black", s=12, alpha=0.5, zorder=3)
+            ax.text(i, means[r], f"{means[r]:+.3f}", ha="center",
+                    va="bottom" if means[r] >= 0 else "top", fontsize=10)
+        ax.axhline(0, color="black", lw=0.6)
+        ax.set_xticks(list(xs)); ax.set_xticklabels([f"{r}\n(n={len(byreg[r])})" for r in regs])
+        ax.set_ylabel("verifier gain (precision - solver acc)")
+        ax.set_title(f"{args.dataset}: verifier gain by regime")
+        fig.tight_layout()
+        png = f"{out_dir}/{args.dataset}_gain_by_regime.png"
+        fig.savefig(png, dpi=130); print(f"\nwrote {png}")
+    except Exception as e:
+        print(f"\n[skip by-regime plot: {e}]")
 
 
 if __name__ == "__main__":

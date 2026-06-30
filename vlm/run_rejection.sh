@@ -30,8 +30,10 @@ done
 log_status "GPUs free -- starting rejection queue"
 
 mml_for() {
+  # Cap context at 32768 for families whose default context OOMs (Qwen3-VL 262k, gemma-4,
+  # InternVL3.5). llava-1.5 (4096 native) is left uncapped on purpose -> "".
   case "$1" in
-    Qwen/Qwen3-VL-*|google/gemma-4-12B-it|google/gemma-4-E4B-it|OpenGVLab/InternVL3_5-*) echo 32768 ;;
+    Qwen/Qwen3-VL-*|google/gemma-4-*|OpenGVLab/InternVL3_5-*) echo 32768 ;;
     *) echo "" ;;
   esac
 }
@@ -49,7 +51,33 @@ short_for() { local s="${1##*/}"; echo "$s" | sed -E 's/[^A-Za-z0-9.-]+/-/g'; }
 # dataset : solver : verifier (or "oracle")
 # Runs already producing metrics.json are skipped automatically, so this is the
 # full target set; only the missing rungs actually execute.
-RUNS=(
+#
+# PHASE 1 (locked 2026-06-25): §5.1 realized rejection sampling for ALL 49 cells of
+# the CharXiv 7-model verifier grid, k=5. The RUNS list is auto-generated below from
+# GRID_MODELS x GRID_MODELS, ordered cheap-first (small solver, then small verifier),
+# so the GPU-cheapest cells complete first and a crash resumes mid-grid. The legacy
+# curated list (CountBench + InternVL ladder/oracle) is preserved under RUNS_LEGACY
+# and can be appended via APPEND_LEGACY=1 once Phase 1 is done.
+#
+# 7 grid models, listed cheap->expensive by (active) param count for the ordering:
+GRID_MODELS="${GRID_MODELS:-\
+Qwen/Qwen3-VL-2B-Instruct \
+OpenGVLab/InternVL3_5-2B \
+google/gemma-4-E4B-it \
+llava-hf/llava-1.5-7b-hf \
+OpenGVLab/InternVL3_5-8B \
+Qwen/Qwen3-VL-8B-Instruct \
+google/gemma-4-12B-it}"
+GRID_DS="${GRID_DS:-charxiv}"
+
+RUNS=()
+for S in $GRID_MODELS; do
+  for V in $GRID_MODELS; do
+    RUNS+=("${GRID_DS}:${S}:${V}")
+  done
+done
+
+RUNS_LEGACY=(
   # --- CountBench: InternVL solver ladder @ fixed 14B verifier + oracle (fast first) ---
   "countbench:OpenGVLab/InternVL3_5-1B:OpenGVLab/InternVL3_5-14B"
   "countbench:OpenGVLab/InternVL3_5-1B:oracle"
@@ -81,6 +109,7 @@ RUNS=(
   "charxiv:OpenGVLab/InternVL3_5-8B:OpenGVLab/InternVL3_5-2B"
   "charxiv:OpenGVLab/InternVL3_5-8B:OpenGVLab/InternVL3_5-8B"
 )
+[[ "${APPEND_LEGACY:-0}" == "1" ]] && RUNS+=("${RUNS_LEGACY[@]}")
 
 for entry in "${RUNS[@]}"; do
   IFS=":" read -r DS SOLVER VERIFIER <<<"$entry"

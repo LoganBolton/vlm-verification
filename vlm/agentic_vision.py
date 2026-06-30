@@ -97,9 +97,20 @@ def parse_zoom_box(text):
     except json.JSONDecodeError:
         return None
     args = call.get("arguments", call) if isinstance(call, dict) else {}
-    box = args.get("box") or args.get("bbox") or args.get("region")
-    if box is None and all(k in args for k in ("x1", "y1", "x2", "y2")):
-        box = [args["x1"], args["y1"], args["x2"], args["y2"]]
+    # Some models double-encode arguments as a JSON string (or emit a bare [x1,y1,x2,y2]
+    # list); decode/handle those instead of crashing on a non-dict.
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    box = None
+    if isinstance(args, dict):
+        box = args.get("box") or args.get("bbox") or args.get("region")
+        if box is None and all(k in args for k in ("x1", "y1", "x2", "y2")):
+            box = [args["x1"], args["y1"], args["x2"], args["y2"]]
+    elif isinstance(args, (list, tuple)) and len(args) == 4:
+        box = list(args)
     if not (isinstance(box, (list, tuple)) and len(box) == 4):
         return None
     try:
