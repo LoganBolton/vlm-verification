@@ -5,7 +5,7 @@
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0
-N=16
+N="${N:-16}"
 LOGDIR=vlm/result/_run_logs; mkdir -p "$LOGDIR"
 STATUS="$LOGDIR/STATUS_selfconsistency.txt"
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
@@ -50,6 +50,13 @@ RUNS=(
   "charxiv:OpenGVLab/InternVL3_5-8B"
   "charxiv:google/gemma-4-12B-it"
 )
+
+# Env override: DATASETS="..." MODELS="..." rebuilds RUNS as the cross product (cheap-first
+# ordering is the caller's responsibility). Used for the n=5 all-13-solver maj@k overnight run.
+if [[ -n "${MODELS:-}" && -n "${DATASETS:-}" ]]; then
+  RUNS=()
+  for ds in $DATASETS; do for m in $MODELS; do RUNS+=("$ds:$m"); done; done
+fi
 for entry in "${RUNS[@]}"; do
   IFS=":" read -r DS SOLVER <<<"$entry"
   SS=$(short "$SOLVER")

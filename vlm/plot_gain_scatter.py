@@ -138,18 +138,22 @@ def main():
 
     # ---- scatter ----
     fig, ax = plt.subplots(figsize=(7, 6))
-    lo = min(xs + ys + [0]); hi = max(xs + ys + [0])
-    pad = 0.02 + 0.05 * (hi - lo)
-    ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "--", color="gray", lw=1, label="y = x")
+    # zoom tight to the data cloud (gains are small) instead of padding out to the origin
+    xmin, xmax = min(xs), max(xs); ymin, ymax = min(ys), max(ys)
+    padx = 0.06 * (xmax - xmin) or 0.005; pady = 0.06 * (ymax - ymin) or 0.005
+    lo, hi = min(xmin, ymin), max(xmax, ymax)
+    ax.plot([lo, hi], [lo, hi], "--", color="gray", lw=1, label="y = x")
     ax.axhline(0, color="black", lw=0.5); ax.axvline(0, color="black", lw=0.5)
     for reg in ["self", "intra", "cross"]:
         g = [r for r in rows if r["regime"] == reg]
         if not g: continue
         ax.scatter([r["pred_gain_k"] for r in g], [r["realized_gain"] for r in g],
-                   s=55, alpha=0.8, color=REGIME_COLOR[reg], edgecolor="white", lw=0.7,
+                   s=60, alpha=0.85, color=REGIME_COLOR[reg], edgecolor="white", lw=0.7,
                    label=f"{reg} (n={len(g)})")
-    ax.set_xlabel(f"predicted verifier gain@{args.k}  (static grid: acc@{args.k} - p)")
-    ax.set_ylabel("realized rejection-sampling gain  (acc_final - acc_0)")
+    ax.set_xlim(xmin - padx, xmax + padx)
+    ax.set_ylim(ymin - pady, ymax + pady)
+    ax.set_xlabel(f"PREDICTED judge gain@{args.k}   (static grid: acc@{args.k} − solver acc)")
+    ax.set_ylabel("REALIZED rejection-sampling gain   (acc_final − acc_0)")
     ax.set_title(f"§5.1  {ds}: predicted gain vs realized resampling\n"
                  f"Pearson r={pr:+.3f}  Spearman ρ={sr:+.3f}  (n={len(rows)})")
     ax.legend(loc="best", fontsize=9)

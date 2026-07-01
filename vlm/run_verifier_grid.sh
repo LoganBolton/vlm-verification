@@ -14,7 +14,7 @@
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0
-DS=charxiv
+DS="${DS:-charxiv}"          # override with DS=countbench for the Phase-4 grid
 OUTDIR=vlm/result/verifier_grid/$DS; mkdir -p "$OUTDIR"
 LOGDIR=vlm/result/_run_logs; mkdir -p "$LOGDIR"
 STATUS="$LOGDIR/STATUS_verifier_grid.txt"
