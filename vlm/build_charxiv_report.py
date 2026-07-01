@@ -15,7 +15,7 @@ Inputs (already produced by verifier_gain.py / plot_gain_scatter.py and the runs
 Run:  .venv/bin/python vlm/build_charxiv_report.py
 Out:  vlm/viz/REPORT.html  (+ regenerates plots/charxiv_zoom_budget.png)
 """
-import base64, bisect, csv, glob, html, json, os, re
+import base64, bisect, csv, glob, html, json, os, re, shutil
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -23,7 +23,13 @@ import matplotlib.pyplot as plt
 RES = "vlm/result"
 GRID_CSV = f"{RES}/verifier_grid/charxiv_gain.csv"
 PLOTS = f"{RES}/plots"
-OUT = "vlm/viz/REPORT.html"
+# Blog-authoring layout: figures written as separate files under report/figures/, an always-fresh
+# canonical render at report/report_generated.html, and report/index.html seeded ONCE for you to
+# hand-edit -- never overwritten on rebuild.
+REPORT_DIR = "report"
+REPORT_FIGS = f"{REPORT_DIR}/figures"
+GEN_OUT = f"{REPORT_DIR}/report_generated.html"
+EDIT_OUT = f"{REPORT_DIR}/index.html"
 FAM_ORDER = {"qwen-vl": 0, "internvl": 1, "gemma": 2, "llava": 3, "other": 4}
 
 
@@ -98,11 +104,15 @@ def label(m, vertical=False):
     return f"<span class=mdl>{logo}<span>{name}</span></span>"
 
 
-def b64img(path, style="max-width:100%"):
+def extimg(path, style="max-width:100%"):
+    """Copy a figure into report/figures/ and reference it as a separate file (not base64),
+    so the HTML is hand-editable and the plots live as standalone images in report/."""
     if not os.path.exists(path):
         return f"<p><em>(missing: {html.escape(path)})</em></p>"
-    b = base64.b64encode(open(path, "rb").read()).decode()
-    return f"<img src='data:image/png;base64,{b}' style='{style}'>"
+    os.makedirs(REPORT_FIGS, exist_ok=True)
+    name = os.path.basename(path)
+    shutil.copyfile(path, os.path.join(REPORT_FIGS, name))
+    return f"<img src='figures/{name}' style='{style}'>"
 
 
 def lerp(c1, c2, t):
@@ -145,6 +155,20 @@ def rdylgn(t):  # soft red(worst)->cream->green(best) ramp; t in [0,1]
     else:
         r, g, b = lerp((250, 248, 236), (120, 184, 130), (t - 0.5) / 0.5)  # cream -> muted green
     return f"rgb({r},{g},{b})"
+
+
+def load_base_v3():
+    """short-name -> v3-scored single-shot base accuracy, so the base column is apples-to-apples
+    with the maj@5 (v3) and agentic-zoom (v3) numbers it is differenced against."""
+    out = {}
+    for sf in glob.glob(f"{RES}/charxiv*/charxiv_*_scores.json"):
+        d = json.load(open(sf))
+        if d.get("metadata", {}).get("extractor") != "charxiv_finalanswer_normalized_match_v3":
+            continue
+        m = re.search(r"charxiv_(.+?)_\d{8}-\d{6}_scores\.json", os.path.basename(sf))
+        if m:
+            out[m.group(1)] = d["metrics"]["solver"]["accuracy"]
+    return out
 
 
 def load_grid():
@@ -195,27 +219,24 @@ def matrix_table(rows, field, good_high, title, note):
     return "".join(h)
 
 
-def summary_table(rows):
-    """One row per solver. base acc | maj@5 (blank) | best cross-family judge Δ@k=5 | zoom@8 Δ.
-    Comparison columns show ONLY the Δ vs base (number coloured green/red); bold = best in row."""
+def summary_table(rows, base_v3):
+    """One row per solver. base acc | maj@5 | avg intra-family judge (k=5) | best zoom.
+    Comparison columns show ONLY the Δ vs base (number coloured green/red); bold = best in row.
+    base acc is the v3-scored single-shot accuracy so every Δ is apples-to-apples."""
     models = sorted({r["solver"] for r in rows} | {r["verifier"] for r in rows},
                     key=lambda m: (FAM_ORDER[family(m)], size(m), m))
     base = {}
     for r in rows:
         base.setdefault(r["solver"], r["p"])
-    bestj = {}  # solver -> (acc@5, judge): best CROSS-family judge, resampling capped at 5 tries
-    for r in rows:
-        if r["regime"] == "cross":
-            a5 = acc_at_k(r["p"], r["tpr"], r["fpr"], 5)
-            s = r["solver"]
-            if s not in bestj or a5 > bestj[s][0]:
-                bestj[s] = (a5, r["verifier"])
-    zoom8 = {}
-    for mp in glob.glob(f"{RES}/agentic_vision/charxiv_c8/*/metrics.json"):
+    base.update(base_v3)                      # prefer the v3-scored base where available
+    # best zoom = highest accuracy across the c2/c4/c8 budgets (budget itself not shown)
+    zoombest = {}
+    for mp in glob.glob(f"{RES}/agentic_vision/charxiv_c*/*/metrics.json"):
         d = json.load(open(mp))
         acc = d.get("accuracy", d.get("metrics", {}).get("accuracy"))
-        if acc is not None:
-            zoom8[os.path.basename(os.path.dirname(mp))] = acc
+        m = os.path.basename(os.path.dirname(mp))
+        if acc is not None and acc > zoombest.get(m, -1):
+            zoombest[m] = acc
     maj5 = {}  # solver -> maj@5 accuracy from the n>=5 independent self-consistency runs
     for mp in glob.glob(f"{RES}/self_consistency/charxiv/*/metrics.json"):
         d = json.load(open(mp))
@@ -223,35 +244,45 @@ def summary_table(rows):
         if len(mk) >= 5:
             maj5[os.path.basename(os.path.dirname(mp))] = mk[4]  # maj_at_k[4] = k=5
 
-    def dcell(val, b, is_best, judge=None):
+    intra = {}  # solver -> mean acc@5 over its INTRA-family judges (same family, diff size)
+    icnt = {}
+    for r in rows:
+        if r["regime"] == "intra":
+            s = r["solver"]
+            intra[s] = intra.get(s, 0.0) + acc_at_k(r["p"], r["tpr"], r["fpr"], 5)
+            icnt[s] = icnt.get(s, 0) + 1
+    for s in list(intra):
+        intra[s] /= icnt[s]
+
+    def dcell(val, b, is_best):
         if val is None:
-            return "<td class=na>–</td>"
+            return "<td class=na>NA</td>"
         d = val - b
         num = f"<b>{d:+.2f}</b>" if is_best else f"{d:+.2f}"
-        sub = f"<div class=sub>{label(judge)}</div>" if judge else ""
-        return f"<td class=c><span style='color:{delta_color(d)}'>{num}</span>{sub}</td>"
+        return f"<td class=c><span style='color:{delta_color(d)}'>{num}</span></td>"
 
     h = ["<table class='mx sum'>",
          "<tr><th class=rowh>solver model</th><th>base<br>acc</th><th>maj@5</th>"
-         "<th>best cross-family<br>judge (Δ, k=5)</th><th>zoom 8 crops<br>(Δ)</th></tr>"]
+         "<th>avg intra-family<br>judge (k=5)</th><th>best<br>zoom</th></tr>"]
     for m in models:
         b = base[m]
-        jv, jn = bestj.get(m, (None, None))
-        z = zoom8.get(m)
+        iv = intra.get(m)
+        z = zoombest.get(m)
         mj = maj5.get(m)
-        cands = [x for x in (b, mj, jv, z) if x is not None]
+        cands = [x for x in (b, mj, iv, z) if x is not None]
         best = max(cands) if cands else None
         bcell = f"<b>{b:.2f}</b>" if best is not None and b == best else f"{b:.2f}"
         h.append(f"<tr><th class=rowh>{label(m)}</th><td class=c>{bcell}</td>"
                  + dcell(mj, b, mj is not None and mj == best)
-                 + dcell(jv, b, jv is not None and jv == best, jn)
+                 + dcell(iv, b, iv is not None and iv == best)
                  + dcell(z, b, z is not None and z == best) + "</tr>")
     h.append("</table>")
     return "".join(h)
 
 
-def zoom_curves():
-    """Build the acc-vs-budget figure + table from charxiv_c{2,4,8} metrics; return (png, html)."""
+def zoom_curves(base):
+    """Build the acc-vs-budget figure + table from charxiv_c{2,4,8} metrics; return (png, html).
+    `base` maps solver short-name -> single-shot base accuracy (for the Δ columns)."""
     data = {}
     for mp in glob.glob(f"{RES}/agentic_vision/charxiv_c*/*/metrics.json"):
         b = int(re.search(r"_c(\d+)/", mp).group(1))
@@ -275,16 +306,21 @@ def zoom_curves():
     fig.tight_layout()
     png = f"{PLOTS}/charxiv_zoom_budget.png"; fig.savefig(png, dpi=130)
 
-    t = ["<table class=mx><tr><th class=rowh>model</th>" +
-         "".join(f"<th>c{b}</th>" for b in budgets) + "<th>Δ(c8-c2)</th></tr>"]
+    # base acc, then each budget as a Δ vs base (coloured number, same style as the summary table)
+    t = ["<table class=mx><tr><th class=rowh>model</th><th>base<br>acc</th>" +
+         "".join(f"<th>c{b}<br>(Δ)</th>" for b in budgets) + "</tr>"]
     for m in models:
         cells = data[m]
-        delta = (cells.get(8, float("nan")) - cells.get(2, float("nan")))
+        b0 = base.get(m)
         row = f"<tr><th class=rowh>{label(m)}</th>"
+        row += f"<td class=c>{b0:.2f}</td>" if b0 is not None else "<td class=na>NA</td>"
         for b in budgets:
-            row += f"<td class=c>{cells[b]:.2f}</td>" if b in cells else "<td class=na>–</td>"
-        row += (f"<td class=c style='background:{color_gain(delta)}'>{delta:+.2f}</td>"
-                if delta == delta else "<td class=na>–</td>") + "</tr>"
+            if b in cells and b0 is not None:
+                d = cells[b] - b0
+                row += f"<td class=c><span style='color:{delta_color(d)}'>{d:+.2f}</span></td>"
+            else:
+                row += "<td class=na>NA</td>"
+        row += "</tr>"
         t.append(row)
     t.append("</table>")
     return png, "".join(t)
@@ -324,7 +360,12 @@ def s51_summary():
 
 def main():
     rows = load_grid()
-    zoom_png, zoom_tbl = zoom_curves()
+    base_v3 = load_base_v3()                  # v3-scored single-shot base per model
+    bacc = {}
+    for r in rows:
+        bacc.setdefault(r["solver"], r["p"])
+    bacc.update(base_v3)                       # prefer v3 base where available
+    zoom_png, zoom_tbl = zoom_curves(bacc)
     s51_txt, _ = s51_summary()
 
     css = """
@@ -337,7 +378,7 @@ def main():
     table.mx td,table.mx th{border:1px solid #ccc;padding:3px 7px;text-align:center}
     table.mx th{background:#f4f6f8} .mx td.c{font-variant-numeric:tabular-nums}
     .mx td.diag{outline:2px solid #2c3e50;outline-offset:-2px;font-weight:600}
-    .mx td.na{color:#bbb} .corner,.rowh{text-align:right!important;background:#f4f6f8;font-weight:600}
+    .mx td.na{color:#c8ccd0;font-style:italic;font-size:.82em} .corner,.rowh{text-align:right!important;background:#f4f6f8;font-weight:600}
     /* org logos: sized to the text so they never alter line height/width */
     .lg{height:1em;width:auto;vertical-align:-0.15em;flex:none}
     """ + LOGO_CSS + """
@@ -351,9 +392,8 @@ def main():
     .mx .avgh{background:#eef2f5;font-weight:700;color:#2c3e50}
     .mx td.avg{font-weight:700;border-left:2px solid #2c3e50}
     .mx .corner{font-size:.72rem;line-height:1.2}
-    table.sum{font-size:.9rem} table.sum td,table.sum th{padding:6px 11px}
-    table.sum .rowh{min-width:150px} .sum .dlt{font-size:.82em;color:#444}
-    .sum .sub{font-size:.66rem;color:#555;margin-top:3px} .sum td.blank{color:#bbb}
+    table.sum{font-size:.9rem} table.sum td,table.sum th{padding:3px 11px;vertical-align:middle;text-align:center}
+    table.sum .rowh{min-width:150px}
     table.kv{border-collapse:collapse;margin:.5rem 0} table.kv td,table.kv th{border:1px solid #ccc;padding:4px 12px}
     .grid2{display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start}
     .card{background:#f8f9fa;border:1px solid #e3e6e8;border-radius:8px;padding:1rem;margin:.5rem 0}
@@ -367,23 +407,24 @@ def main():
              "Self = model judging itself; intra = same family, different size; cross = different family.</p>")
 
     P.append("<h2>1 · Per-model summary <span class=note>(test-time compute vs single-shot base)</span></h2>")
-    P.append("<p class=note>One row per solver. <b>base acc</b> = single-shot accuracy; "
-             "<b>maj@5</b> = majority vote of 5 independent samples (Δ vs base); "
-             "<b>best cross-family judge (Δ, k=5)</b> = change vs base from rejection-sampling with the "
-             "best different-family judge, capped at 5 tries (judge shown beneath); "
-             "<b>zoom 8 crops (Δ)</b> = agentic-vision at budget 8. Comparison columns show only the "
-             "Δ vs base — green number = gain, red = drop; <b>bold</b> = best accuracy in the row. "
-             "Zoom n/a for llava (single-image) and gemma-4-12B (vLLM bug).</p>")
-    P.append(summary_table(rows))
+    P.append("<p class=note>One row per solver. <b>base acc</b> = single-shot accuracy "
+             "(v3 scorer, same as every other column); "
+             "<b>maj@5</b> = majority vote of 5 independent samples; "
+             "<b>avg intra-family judge (k=5)</b> = mean over same-family judges of rejection-sampling "
+             "capped at 5 tries; <b>best zoom</b> = best accuracy across the 2/4/8-crop agentic-vision "
+             "budgets. All comparison columns show only the Δ vs base — green number = gain, red = drop; "
+             "<b>bold</b> = best accuracy in the row. "
+             "Zoom n/a for llava (single-image only) and gemma-4-12B (vLLM bug).</p>")
+    P.append(summary_table(rows, base_v3))
 
     P.append("<h2>2 · Judge gain by regime <span class=note>(the headline)</span></h2>")
-    P.append("<div class=grid2><div>" + b64img(f"{PLOTS}/charxiv_gain_by_regime.png", "max-width:480px") + "</div>")
+    P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/charxiv_gain_by_regime.png", "max-width:480px") + "</div>")
     P.append("<div class=card>" + regime_summary(rows) +
              "<p class=note>Gain = judge-accept precision − solver accuracy (asymptotic resampling lift). "
              "<b>Self-judging pays off least</b> — models rubber-stamp their own outputs; cross-family is most honest.</p></div></div>")
 
     P.append("<h2>3 · §5.1 — does gain predict realized resampling?</h2>")
-    P.append("<div class=grid2><div>" + b64img(f"{PLOTS}/charxiv_gain_vs_resampling.png", "max-width:520px") + "</div>")
+    P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/charxiv_gain_vs_resampling.png", "max-width:520px") + "</div>")
     P.append("<div class=card>" + s51_txt + "</div></div>")
 
     P.append("<h2>4 · Gain / F1 / FNR matrices <span class=note>(rows = JUDGE model, "
@@ -399,22 +440,22 @@ def main():
                           "lower is better, so colour is inverted: green = lenient (accepts correct), red = harsh (rejects correct, e.g. llava / over-strict judges)."))
 
     P.append("<h2>5 · Agentic-zoom — accuracy vs budget</h2>")
-    P.append("<div class=grid2><div>" + b64img(zoom_png, "max-width:540px") + "</div>")
     P.append("<div class=card>" + zoom_tbl +
-             "<p class=note>More crops mostly flat/negative for weaker families; strongest model (Q-8B) gains with budget.</p></div></div>")
-    # rollout viewer links (separate files under views/agentic_charxiv_c*/)
-    links = []
-    for vd in sorted(glob.glob("vlm/viz/views/agentic_charxiv_c*")):
-        ds = os.path.basename(vd)
-        for page in sorted(glob.glob(f"{vd}/*.html")):
-            rel = os.path.relpath(page, "vlm/viz")
-            links.append(f"<a class=viewer href='{html.escape(rel)}'>{html.escape(ds)}/{html.escape(os.path.basename(page)[:-5])}</a>")
-    if links:
-        P.append("<p class=note>Zoom rollout viewers (per model, with drawn zoom regions + step timeline):</p><div>" + "".join(links) + "</div>")
+             "<p class=note>Δ vs the v3 base at each crop budget. Zoom helps gemma / small-Qwen but hurts the "
+             "InternVL family (it won't emit the required &lt;tool_call&gt; markup, so crops never fire).</p></div>")
 
-    with open(OUT, "w") as f:
-        f.write("\n".join(P))
-    print(f"wrote {OUT}  ({os.path.getsize(OUT)//1024} KB)")
+    doc = "\n".join(P)
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    with open(GEN_OUT, "w") as f:                     # always-fresh canonical render
+        f.write(doc)
+    if os.path.exists(EDIT_OUT):                       # never clobber your hand-edited copy
+        note = f"left your {EDIT_OUT} untouched"
+    else:
+        with open(EDIT_OUT, "w") as f:
+            f.write(doc)
+        note = f"seeded editable {EDIT_OUT}"
+    nfig = len(glob.glob(f"{REPORT_FIGS}/*"))
+    print(f"wrote {GEN_OUT} ({os.path.getsize(GEN_OUT)//1024} KB) + {nfig} figure(s) in {REPORT_FIGS}/; {note}")
 
 
 if __name__ == "__main__":

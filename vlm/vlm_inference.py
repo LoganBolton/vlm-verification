@@ -75,8 +75,13 @@ def load_image_qa(data_dir: str) -> Dataset:
     return Dataset.from_list(records)
 
 
-def load_chat_renderer(model_name: str):
+def load_chat_renderer(model_name: str, tools=None):
     """Return render(messages) -> prompt string for the model.
+
+    If `tools` is given (list of OpenAI-style function schemas), it is passed through to
+    `apply_chat_template(..., tools=tools)` so the model declares/formats tool calls in ITS
+    OWN native format (e.g. Gemma's `<|tool>declaration...`), rather than us hand-writing a
+    foreign tool syntax into the prompt.
 
     Normally the AutoProcessor owns the multimodal chat template. Models without a
     processor class (e.g. the original non-HF InternVL checkpoints, whose vLLM code path
@@ -89,8 +94,9 @@ def load_chat_renderer(model_name: str):
         processor = _AP.from_pretrained(model_name, trust_remote_code=True)
 
         def render(messages):
+            kw = {"tools": tools} if tools else {}
             return processor.apply_chat_template(messages, tokenize=False,
-                                                 add_generation_prompt=True)
+                                                 add_generation_prompt=True, **kw)
         return render
     except Exception as e:
         print(f"[load_chat_renderer] no AutoProcessor for {model_name} ({type(e).__name__}); "

@@ -66,6 +66,53 @@ def conv_answer(conv):
     return "\n".join(p for p in parts if p).strip()
 
 
+# Gemma-4 native tool-calling. Instead of hand-writing the Hermes <tool_call> syntax into the
+# prompt (which Gemma won't emit -- it uses its own <|tool_call>call:name{...}<tool_call|> tokens),
+# we DECLARE this schema via apply_chat_template(tools=...) and stop generation at the native
+# <tool_call|> token, then parse Gemma's own call. This is Google's recommended tool-use path.
+ZOOM_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "zoom",
+        "description": "Zoom in on a sub-region of the image to inspect small details "
+                       "(tiny labels, axis ticks, closely-packed objects).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "box": {"type": "array", "items": {"type": "number"},
+                        "description": "[x1, y1, x2, y2] as fractions of the FULL image in [0,1]; "
+                                       "x1,y1 = top-left, x2,y2 = bottom-right (x2>x1, y2>y1)."},
+            },
+            "required": ["box"],
+        },
+    },
+}
+
+
+def is_gemma_tool_model(name):
+    """gemma-4 exposes native tool tokens + tools= in its processor; use the native path."""
+    return "gemma-4" in name.lower()
+
+
+# Gemma's stripped call looks like `call:zoom{box:[x1,y1,x2,y2]}` (or JSON `"box":[...]`).
+_GEMMA_BOX_RE = re.compile(r"zoom\b[^{}]*\{[^{}]*box[\"'\s]*[:=]\s*\[([-\d.,\s]+)\]", re.S)
+
+
+def parse_gemma_box(text):
+    """Extract the [x1,y1,x2,y2] box from a Gemma native `call:zoom{box:[...]}`. Requiring the
+    literal `zoom{...box:[...]}` structure avoids false-firing on coords mentioned in reasoning."""
+    m = None
+    for m in _GEMMA_BOX_RE.finditer(text):
+        pass
+    if m is None:
+        return None
+    try:
+        vals = [float(v) for v in m.group(1).split(",") if v.strip() != ""]
+    except ValueError:
+        return None
+    return vals[:4] if len(vals) >= 4 else None
+
+
 def parse_zoom_box(text):
     """Extract the [x1,y1,x2,y2] box from the last <tool_call> in `text`.
 
@@ -173,6 +220,14 @@ class Engine:
         mm_extra = {}
         if args.solver_disable_chunked_mm:
             mm_extra["disable_chunked_mm_input"] = True
+        # We only ever feed images. gemma-4-12B is a unified image+audio model; vLLM's memory
+        # profiler otherwise instantiates its audio tower (Gemma4UnifiedAudioFeatureExtractor)
+        # which crashes on this build ('fft_length'). Cap audio to 0 so that path is never built.
+        # (The smaller gemma-4-E* models are image-only, so we only add the audio cap when needed.)
+        limit_mm = {"image": max_images, "video": 0}
+        _name = args.solver_model_name.lower()
+        if "gemma-4" in _name and "gemma-4-e" not in _name:
+            limit_mm["audio"] = 0
         self.LLM = LLM(
             model=args.solver_model_name,
             dtype=torch.bfloat16,
@@ -181,28 +236,39 @@ class Engine:
             gpu_memory_utilization=args.gpu_memory_utilization,
             max_model_len=args.solver_max_model_len,
             seed=args.seed,
-            limit_mm_per_prompt={"image": max_images, "video": 0},
+            limit_mm_per_prompt=limit_mm,
             **mm_extra,
         )
         common = dict(temperature=args.solver_temperature, top_p=args.solver_top_p,
                       top_k=args.solver_top_k, repetition_penalty=args.solver_repetition_penalty,
                       max_tokens=args.solver_max_new_tokens, seed=args.seed)
-        # Zoom turns stop the moment a tool call closes, so we can act on it.
-        self.sampling = SamplingParams(stop=["</tool_call>"], **common)
-        # Forced-answer turns must NOT stop at a tool call -- we want a real \boxed{} answer.
+        # Zoom turns stop the moment a tool call closes, so we can act on it. Gemma-4 emits its
+        # native <tool_call|> token (id resolved from the tokenizer) rather than the Hermes string.
+        if is_gemma_tool_model(args.solver_model_name):
+            tok = self.LLM.get_tokenizer()
+            end_id = tok.convert_tokens_to_ids("<tool_call|>")
+            self.sampling = SamplingParams(stop_token_ids=[end_id], **common)
+            self.tool_stop = end_id
+        else:
+            self.sampling = SamplingParams(stop=["</tool_call>"], **common)
+            self.tool_stop = "</tool_call>"
+        # Forced-answer / final turns must NOT stop at a tool call -- we want a real \boxed{} answer.
         self.sampling_answer = SamplingParams(**common)
 
     def generate(self, prompts, images, sampling=None):
-        """prompts: list[str]; images: list[list[PIL]] (one list per prompt)."""
+        """prompts: list[str]; images: list[list[PIL]] (one list per prompt).
+        Returns (texts, tokens, stop_reasons) where stop_reason is the stop string/token-id that
+        ended each generation (so the caller can tell a tool call from a natural answer)."""
         inputs = [{"prompt": p, "multi_modal_data": {"image": imgs}}
                   for p, imgs in zip(prompts, images)]
         gens = self.LLM.generate(inputs, sampling or self.sampling)
-        out_text, tokens = [], 0
+        out_text, tokens, stops = [], 0, []
         for g in gens:
             o = g.outputs[0]
             out_text.append(o.text)
+            stops.append(getattr(o, "stop_reason", None))
             tokens += len(g.prompt_token_ids or []) + len(o.token_ids)
-        return out_text, tokens
+        return out_text, tokens, stops
 
 
 # --------------------------------------------------------------------------------------
@@ -248,9 +314,17 @@ def main():
     N = len(dataset)
     print(f"Dataset size: {N}  | max_crops={args.max_crops}")
 
-    with open(f"{args.prompt_dir}/agentic_vision_prompt.md") as f:
+    # Gemma-4 uses its NATIVE tool protocol (tool declared via tools=, native <tool_call|> stop,
+    # native call parsed) instead of the hand-written Hermes <tool_call> prompt that other models
+    # get. This is Google's recommended path and gives Gemma a fair shot at the zoom tool.
+    gemma_tools = is_gemma_tool_model(args.solver_model_name)
+    prompt_file = "agentic_vision_gemma.md" if gemma_tools else "agentic_vision_prompt.md"
+    with open(f"{args.prompt_dir}/{prompt_file}") as f:
         prompt_tmpl = f.read()
-    render = load_chat_renderer(args.solver_model_name)
+    render = load_chat_renderer(args.solver_model_name,
+                                tools=[ZOOM_TOOL] if gemma_tools else None)
+    parse_call = parse_gemma_box if gemma_tools else parse_zoom_box
+    readd_tag = "" if gemma_tools else "</tool_call>"  # Hermes stop tag was stripped; re-add it
 
     # Per-problem state.
     convs = []      # message lists
@@ -281,15 +355,22 @@ def main():
         batch_imgs = [imgs[i] for i in active]
         # On the final round there is no more zooming, so generate a real answer (no tool
         # stop) instead of letting the turn end at another <tool_call>.
-        outs, toks = engine.generate(prompts, batch_imgs,
-                                     sampling=engine.sampling_answer if last_round else None)
+        outs, toks, stops = engine.generate(prompts, batch_imgs,
+                                            sampling=engine.sampling_answer if last_round else None)
         total_tokens += toks
 
-        for i, text in zip(active, outs):
-            box = None if last_round else parse_zoom_box(text)
+        for i, text, stop in zip(active, outs, stops):
+            if last_round:
+                box = None
+            elif gemma_tools:
+                # Only a call that actually halted on the native <tool_call|> token is a zoom;
+                # coords merely mentioned in the thought channel don't count.
+                box = parse_call(text) if stop == engine.tool_stop else None
+            else:
+                box = parse_call(text)
             if box is not None and len(boxes[i]) < args.max_crops:
-                # Record assistant zoom turn (re-add the stripped stop tag), then crop.
-                convs[i].append({"role": "assistant", "content": text + "</tool_call>"})
+                # Record assistant zoom turn (re-add the stripped stop tag for Hermes), then crop.
+                convs[i].append({"role": "assistant", "content": text + readd_tag})
                 ex = dataset[i]
                 crop, px = crop_region(imgs[i][0], box)
                 imgs[i].append(crop)
@@ -322,8 +403,8 @@ def main():
         for i in need:
             convs[i].append({"role": "user", "content": [{"type": "text", "text": force_msg}]})
         prompts = [render(convs[i]) for i in need]
-        outs, toks = engine.generate(prompts, [imgs[i] for i in need],
-                                     sampling=engine.sampling_answer)
+        outs, toks, _ = engine.generate(prompts, [imgs[i] for i in need],
+                                        sampling=engine.sampling_answer)
         total_tokens += toks
         for i, text in zip(need, outs):
             convs[i].append({"role": "assistant", "content": text})
