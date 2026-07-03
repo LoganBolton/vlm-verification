@@ -24,6 +24,13 @@ MODELS="${MODELS:-Qwen/Qwen3-VL-2B-Instruct Qwen/Qwen3-VL-4B-Instruct Qwen/Qwen3
 
 short() { local s="${1##*/}"; echo "$s" | sed -E 's/[^A-Za-z0-9.-]+/-/g'; }
 
+mml_for() {  # per-model context cap. InternVL's 8-crop prompts can exceed 32k; use its native 40960.
+  case "$1" in
+    *InternVL*) echo 40960 ;;
+    *)          echo 32768 ;;
+  esac
+}
+
 wait_gpu() {  # block until BOTH GPUs are essentially empty (prev run fully released VRAM)
   for _ in $(seq 1 180); do  # up to ~30 min
     used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | sort -nr | head -1)
@@ -58,7 +65,7 @@ for DS in $DATASETS; do
       log "START $DS c=$CROPS solver=$SS"
       if $PY vlm/agentic_vision.py --solver_model_name "$SOLVER" \
             --data_dir "data/$DS" --max_crops "$CROPS" \
-            --solver_max_model_len 32768 --solver_max_new_tokens "$MNT" \
+            --solver_max_model_len "$(mml_for "$SOLVER")" --solver_max_new_tokens "$MNT" \
             --output_dir "$OUT" >"$LOGF" 2>&1; then
         log "OK    $DS c=$CROPS solver=$SS"; NDONE=$((NDONE+1))
       else

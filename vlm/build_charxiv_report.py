@@ -140,6 +140,17 @@ def delta_color(d):  # text colour for a Δ: green gain / red drop / grey ~0
     return "#1a7f37" if d > 5e-4 else ("#c0392b" if d < -5e-4 else "#888")
 
 
+def rel_pct(delta, base):  # relative change: a Δ expressed as a % of the base it's measured against
+    if not base:
+        return ""
+    return f"{delta / base * 100:+.0f}%"
+
+
+def rel_span(delta, base):  # muted "(±NN%)" parenthetical to sit beside a raw Δ
+    r = rel_pct(delta, base)
+    return f" <span class=rel>({r})</span>" if r else ""
+
+
 def acc_at_k(p, tpr, fpr, k):  # expected rejection-sampling accuracy with a budget of k tries
     a = p * tpr + (1 - p) * fpr
     if a <= 0:
@@ -157,29 +168,153 @@ def rdylgn(t):  # soft red(worst)->cream->green(best) ramp; t in [0,1]
     return f"rgb({r},{g},{b})"
 
 
-def load_base_v3():
-    """short-name -> v3-scored single-shot base accuracy, so the base column is apples-to-apples
-    with the maj@5 (v3) and agentic-zoom (v3) numbers it is differenced against."""
-    out = {}
-    for sf in glob.glob(f"{RES}/charxiv*/charxiv_*_scores.json"):
-        d = json.load(open(sf))
-        if d.get("metadata", {}).get("extractor") != "charxiv_finalanswer_normalized_match_v3":
-            continue
-        m = re.search(r"charxiv_(.+?)_\d{8}-\d{6}_scores\.json", os.path.basename(sf))
-        if m:
-            out[m.group(1)] = d["metrics"]["solver"]["accuracy"]
-    return out
+GRID_FIELDS = ("p", "f1", "fnr", "gain", "precision", "verifier_acc", "tpr", "fpr")
 
 
-def load_grid():
-    rows = list(csv.DictReader(open(GRID_CSV)))
+def load_grid(ds):
+    rows = list(csv.DictReader(open(f"{RES}/verifier_grid/{ds}_gain.csv")))
     for r in rows:
-        for k in ("p", "f1", "fnr", "gain", "precision", "verifier_acc", "tpr", "fpr"):
+        for k in GRID_FIELDS:
             r[k] = float(r[k])
     return rows
 
 
-def matrix_table(rows, field, good_high, title, note):
+def load_base(ds):
+    """short-name -> single-shot base accuracy. CharXiv uses the v3 scorer (apples-to-apples with
+    maj@5 / zoom); CountBench has one uniform scorer, so we just take each model's latest run."""
+    out = {}
+    if ds == "charxiv":
+        for sf in glob.glob(f"{RES}/charxiv*/charxiv_*_scores.json"):
+            d = json.load(open(sf))
+            if d.get("metadata", {}).get("extractor") != "charxiv_finalanswer_normalized_match_v3":
+                continue
+            m = re.search(r"charxiv_(.+?)_\d{8}-\d{6}_scores\.json", os.path.basename(sf))
+            if m:
+                out[m.group(1)] = d["metrics"]["solver"]["accuracy"]
+    else:
+        best = {}  # name -> (timestamp, acc); keep the latest run per model
+        for sf in glob.glob(f"{RES}/{ds}*/{ds}_*_scores.json"):
+            m = re.search(rf"{ds}_(.+?)_(\d{{8}}-\d{{6}})_scores\.json", os.path.basename(sf))
+            if not m:
+                continue
+            name, tstamp = m.group(1), m.group(2)
+            if tstamp >= best.get(name, ("",))[0]:
+                best[name] = (tstamp, json.load(open(sf))["metrics"]["solver"]["accuracy"])
+        out = {n: v[1] for n, v in best.items()}
+    return out
+
+
+def load_maj5(ds):
+    """short-name -> maj@5 accuracy from the n>=5 independent self-consistency runs."""
+    out = {}
+    for mp in glob.glob(f"{RES}/self_consistency/{ds}/*/metrics.json"):
+        mk = json.load(open(mp)).get("maj_at_k") or []
+        if len(mk) >= 5:
+            out[os.path.basename(os.path.dirname(mp))] = mk[4]  # maj_at_k[4] = k=5
+    return out
+
+
+def load_zoom(ds):
+    """short-name -> {budget: accuracy} across the agentic-zoom c2/c4/c8 runs."""
+    data = {}
+    for mp in glob.glob(f"{RES}/agentic_vision/{ds}_c*/*/metrics.json"):
+        mm = re.search(r"_c(\d+)/", mp)
+        if not mm:
+            continue
+        b = int(mm.group(1))
+        d = json.load(open(mp))
+        acc = d.get("accuracy", d.get("metrics", {}).get("accuracy"))
+        if acc is not None:
+            data.setdefault(os.path.basename(os.path.dirname(mp)), {})[b] = acc
+    return data
+
+
+def compute_intra(rows):
+    """short-name -> mean acc@5 over the solver's INTRA-family judges (same family, diff size)."""
+    tot, cnt = {}, {}
+    for r in rows:
+        if r["regime"] == "intra":
+            s = r["solver"]
+            tot[s] = tot.get(s, 0.0) + acc_at_k(r["p"], r["tpr"], r["fpr"], 5)
+            cnt[s] = cnt.get(s, 0) + 1
+    return {s: tot[s] / cnt[s] for s in tot}
+
+
+def base_with_fallback(ds, rows):
+    """Base accuracy per solver: measured base (v3/latest) where available, else the grid's p."""
+    b = {}
+    for r in rows:
+        b.setdefault(r["solver"], r["p"])
+    b.update(load_base(ds))
+    return b
+
+
+# ---- "Average" builders: combine the two datasets cell-by-cell (intersection only) ----
+def mean_dict(dicts):
+    keys = set().union(*[d.keys() for d in dicts]) if dicts else set()
+    out = {}
+    for k in keys:
+        vals = [d[k] for d in dicts if d.get(k) is not None]
+        if vals:
+            out[k] = sum(vals) / len(vals)
+    return out
+
+
+def avg_grid(rows_a, rows_b):
+    da = {(r["solver"], r["verifier"]): r for r in rows_a}
+    db = {(r["solver"], r["verifier"]): r for r in rows_b}
+    out = []
+    for k in da.keys() & db.keys():
+        ra, rb = da[k], db[k]
+        m = {"solver": k[0], "verifier": k[1], "regime": ra["regime"]}
+        for f in GRID_FIELDS:
+            m[f] = (ra[f] + rb[f]) / 2
+        out.append(m)
+    return out
+
+
+def avg_zoom(zlist):
+    out = {}
+    for m in set().union(*[z.keys() for z in zlist]) if zlist else set():
+        bud = {}
+        for b in set().union(*[z.get(m, {}).keys() for z in zlist]):
+            vals = [z[m][b] for z in zlist if b in z.get(m, {})]
+            if vals:
+                bud[b] = sum(vals) / len(vals)
+        out[m] = bud
+    return out
+
+
+def avg_s51(rows_a, rows_b):
+    da = {(r["solver"], r["verifier"]): r for r in rows_a}
+    db = {(r["solver"], r["verifier"]): r for r in rows_b}
+    out = []
+    for k in da.keys() & db.keys():
+        ra, rb = da[k], db[k]
+        out.append({"solver": k[0], "verifier": k[1], "regime": ra["regime"],
+                    "pred_gain_k": (float(ra["pred_gain_k"]) + float(rb["pred_gain_k"])) / 2,
+                    "realized_gain": (float(ra["realized_gain"]) + float(rb["realized_gain"])) / 2,
+                    "base": (float(ra["base"]) + float(rb["base"])) / 2})
+    return out
+
+
+def realized_rows(s51_rows):
+    """Reshape §5.1 rejection rows into what matrix_table/regime_summary expect: the realized gain
+    (final − base accuracy) as the `gain` field, and the base accuracy as `p` (for the rel-% column)."""
+    out = []
+    for r in s51_rows:
+        try:
+            g, b = float(r["realized_gain"]), float(r["base"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        out.append({"solver": r["solver"], "verifier": r["verifier"],
+                    "regime": r["regime"], "gain": g, "p": b})
+    return out
+
+
+def matrix_table(rows, field, good_high, title, note, show_rel=False):
+    """show_rel: for the gain matrix, append each cell's gain as a % of the solver's base accuracy
+    (relative lift), e.g. "+0.11 (+15%)" — makes cells comparable across easy/hard datasets."""
     models = sorted({r["solver"] for r in rows} | {r["verifier"] for r in rows},
                     key=lambda m: (FAM_ORDER[family(m)], size(m), m))
     cell = {(r["solver"], r["verifier"]): r for r in rows}
@@ -201,17 +336,22 @@ def matrix_table(rows, field, good_high, title, note):
     h.append("</tr>")
     for v in models:
         h.append(f"<tr><th class=rowh>{label(v)}</th>")
-        vals = []
+        vals, sg, sb = [], 0.0, 0.0
         for s in models:
             r = cell.get((s, v))
             if not r:
                 h.append("<td class=na>–</td>"); continue
             val = r[field]; vals.append(val)
             diag = " diag" if s == v else ""
-            h.append(f"<td class='c{diag}' style='background:{colorfn(val)}'>{fmt(val)}</td>")
+            rel = rel_span(val, r["p"]) if show_rel else ""
+            if show_rel:
+                sg += val; sb += r["p"]                        # for the base-weighted row avg
+            h.append(f"<td class='c{diag}' style='background:{colorfn(val)}'>{fmt(val)}{rel}</td>")
         if vals:
             av = sum(vals) / len(vals)
-            h.append(f"<td class='c avg' style='background:{colorfn(av)}'>{fmt(av)}</td>")
+            avrel = (f" <span class=rel>({sg/sb*100:+.0f}%)</span>"
+                     if show_rel and sb else "")
+            h.append(f"<td class='c avg' style='background:{colorfn(av)}'>{fmt(av)}{avrel}</td>")
         else:
             h.append("<td class=na>–</td>")
         h.append("</tr>")
@@ -219,56 +359,42 @@ def matrix_table(rows, field, good_high, title, note):
     return "".join(h)
 
 
-def summary_table(rows, base_v3):
+def render_summary(models, base, maj5, intra, zoomdata, pct_only=False):
     """One row per solver. base acc | maj@5 | avg intra-family judge (k=5) | best zoom.
-    Comparison columns show ONLY the Δ vs base (number coloured green/red); bold = best in row.
-    base acc is the v3-scored single-shot accuracy so every Δ is apples-to-apples."""
-    models = sorted({r["solver"] for r in rows} | {r["verifier"] for r in rows},
-                    key=lambda m: (FAM_ORDER[family(m)], size(m), m))
-    base = {}
-    for r in rows:
-        base.setdefault(r["solver"], r["p"])
-    base.update(base_v3)                      # prefer the v3-scored base where available
-    # best zoom = highest accuracy across the c2/c4/c8 budgets (budget itself not shown)
-    zoombest = {}
-    for mp in glob.glob(f"{RES}/agentic_vision/charxiv_c*/*/metrics.json"):
-        d = json.load(open(mp))
-        acc = d.get("accuracy", d.get("metrics", {}).get("accuracy"))
-        m = os.path.basename(os.path.dirname(mp))
-        if acc is not None and acc > zoombest.get(m, -1):
-            zoombest[m] = acc
-    maj5 = {}  # solver -> maj@5 accuracy from the n>=5 independent self-consistency runs
-    for mp in glob.glob(f"{RES}/self_consistency/charxiv/*/metrics.json"):
-        d = json.load(open(mp))
-        mk = d.get("maj_at_k") or []
-        if len(mk) >= 5:
-            maj5[os.path.basename(os.path.dirname(mp))] = mk[4]  # maj_at_k[4] = k=5
-
-    intra = {}  # solver -> mean acc@5 over its INTRA-family judges (same family, diff size)
-    icnt = {}
-    for r in rows:
-        if r["regime"] == "intra":
-            s = r["solver"]
-            intra[s] = intra.get(s, 0.0) + acc_at_k(r["p"], r["tpr"], r["fpr"], 5)
-            icnt[s] = icnt.get(s, 0) + 1
-    for s in list(intra):
-        intra[s] /= icnt[s]
+    Comparison columns show the Δ vs base (number coloured green/red); bold = best in row.
+    pct_only: show ONLY the relative % change (no raw Δ) — used for the summarised index.html.
+    All inputs are precomputed short-name -> value dicts (zoomdata is {model:{budget:acc}})."""
+    zoombest = {m: max(v.values()) for m, v in zoomdata.items() if v}
 
     def dcell(val, b, is_best):
         if val is None:
             return "<td class=na>NA</td>"
         d = val - b
+        if pct_only:
+            r = rel_pct(d, b) or "–"
+            inner = f"<b>{r}</b>" if is_best else r
+            return f"<td class=c><span style='color:{delta_color(d)}'>{inner}</span></td>"
         num = f"<b>{d:+.2f}</b>" if is_best else f"{d:+.2f}"
-        return f"<td class=c><span style='color:{delta_color(d)}'>{num}</span></td>"
+        return (f"<td class=c><span style='color:{delta_color(d)}'>{num}</span>"
+                f"{rel_span(d, b)}</td>")
 
     h = ["<table class='mx sum'>",
          "<tr><th class=rowh>solver model</th><th>base<br>acc</th><th>maj@5</th>"
          "<th>avg intra-family<br>judge (k=5)</th><th>best<br>zoom</th></tr>"]
+    # accumulate per-column changes (Δ and % vs base) so we can average them in a footer row
+    dlt = {"maj5": [], "intra": [], "zoom": []}
+    pct = {"maj5": [], "intra": [], "zoom": []}
+    bases = []
     for m in models:
-        b = base[m]
-        iv = intra.get(m)
-        z = zoombest.get(m)
-        mj = maj5.get(m)
+        b = base.get(m)
+        if b is None:
+            continue
+        bases.append(b)
+        iv, z, mj = intra.get(m), zoombest.get(m), maj5.get(m)
+        for key, val in (("maj5", mj), ("intra", iv), ("zoom", z)):
+            if val is not None and b:
+                dlt[key].append(val - b)
+                pct[key].append((val - b) / b * 100)
         cands = [x for x in (b, mj, iv, z) if x is not None]
         best = max(cands) if cands else None
         bcell = f"<b>{b:.2f}</b>" if best is not None and b == best else f"{b:.2f}"
@@ -276,23 +402,31 @@ def summary_table(rows, base_v3):
                  + dcell(mj, b, mj is not None and mj == best)
                  + dcell(iv, b, iv is not None and iv == best)
                  + dcell(z, b, z is not None and z == best) + "</tr>")
+
+    # footer: mean change per column (mean of each model's % change; raw mode also shows mean Δ)
+    def fcell(key):
+        if not pct[key]:
+            return "<td class=na>–</td>"
+        mp = sum(pct[key]) / len(pct[key])
+        if pct_only:
+            return f"<td class=c><span style='color:{delta_color(mp)}'><b>{mp:+.0f}%</b></span></td>"
+        md = sum(dlt[key]) / len(dlt[key])
+        return (f"<td class=c><span style='color:{delta_color(md)}'><b>{md:+.2f}</b></span>"
+                f" <span class=rel>({mp:+.0f}%)</span></td>")
+    mb = f"{sum(bases)/len(bases):.2f}" if bases else "–"
+    h.append(f"<tr class=avgrow><th class=rowh>average</th><td class=c>{mb}</td>"
+             + fcell("maj5") + fcell("intra") + fcell("zoom") + "</tr>")
     h.append("</table>")
     return "".join(h)
 
 
-def zoom_curves(base):
-    """Build the acc-vs-budget figure + table from charxiv_c{2,4,8} metrics; return (png, html).
-    `base` maps solver short-name -> single-shot base accuracy (for the Δ columns)."""
-    data = {}
-    for mp in glob.glob(f"{RES}/agentic_vision/charxiv_c*/*/metrics.json"):
-        b = int(re.search(r"_c(\d+)/", mp).group(1))
-        model = os.path.basename(os.path.dirname(mp))
-        d = json.load(open(mp))
-        acc = d.get("accuracy", d.get("metrics", {}).get("accuracy"))
-        if acc is not None:
-            data.setdefault(model, {})[b] = acc
+def render_zoom(zoomdata, base, pngpath, acc_label):
+    """acc-vs-budget figure + Δ table from a {model:{budget:acc}} dict; returns (png, html)."""
+    data = {m: v for m, v in zoomdata.items() if v}
     models = sorted(data, key=lambda m: (FAM_ORDER[family(m)], size(m), m))
     budgets = sorted({b for v in data.values() for b in v})
+    if not models:
+        return None, "<p class=note><em>(no zoom runs for this dataset)</em></p>"
 
     fig, ax = plt.subplots(figsize=(7, 5))
     cmap = plt.get_cmap("tab10")
@@ -300,74 +434,163 @@ def zoom_curves(base):
         xs = [b for b in budgets if b in data[m]]
         ys = [data[m][b] for b in xs]
         ax.plot(xs, ys, "-o", color=cmap(i % 10), label=short(m), lw=1.8, ms=5)
-    ax.set_xlabel("zoom budget (max crops)"); ax.set_ylabel("CharXiv accuracy")
-    ax.set_xticks(budgets); ax.set_title("Agentic-zoom: accuracy vs budget")
+    ax.set_xlabel("zoom budget (max crops)"); ax.set_ylabel(f"{acc_label} accuracy")
+    ax.set_xticks(budgets); ax.set_title(f"Agentic-zoom: accuracy vs budget — {acc_label}")
     ax.legend(fontsize=8, ncol=2); ax.grid(alpha=0.3)
-    fig.tight_layout()
-    png = f"{PLOTS}/charxiv_zoom_budget.png"; fig.savefig(png, dpi=130)
+    fig.tight_layout(); fig.savefig(pngpath, dpi=130); plt.close(fig)
 
-    # base acc, then each budget as a Δ vs base (coloured number, same style as the summary table)
     t = ["<table class=mx><tr><th class=rowh>model</th><th>base<br>acc</th>" +
          "".join(f"<th>c{b}<br>(Δ)</th>" for b in budgets) + "</tr>"]
     for m in models:
-        cells = data[m]
-        b0 = base.get(m)
+        cells = data[m]; b0 = base.get(m)
         row = f"<tr><th class=rowh>{label(m)}</th>"
         row += f"<td class=c>{b0:.2f}</td>" if b0 is not None else "<td class=na>NA</td>"
         for b in budgets:
             if b in cells and b0 is not None:
                 d = cells[b] - b0
-                row += f"<td class=c><span style='color:{delta_color(d)}'>{d:+.2f}</span></td>"
+                row += (f"<td class=c><span style='color:{delta_color(d)}'>{d:+.2f}</span>"
+                        f"{rel_span(d, b0)}</td>")
             else:
                 row += "<td class=na>NA</td>"
-        row += "</tr>"
-        t.append(row)
+        t.append(row + "</tr>")
     t.append("</table>")
-    return png, "".join(t)
+    return pngpath, "".join(t)
+
+
+_REG_COLOR = {"self": "#c0392b", "intra": "#e2a53b", "cross": "#3ca846"}
+
+
+def plot_regime_bar(rows, pngpath, title):
+    """Mean judge gain by regime (self/intra/cross) as a small bar chart."""
+    import collections
+    by = collections.defaultdict(list)
+    for r in rows:
+        by[r["regime"]].append(r["gain"])
+    regs = [r for r in ("self", "intra", "cross") if by.get(r)]
+    means = [sum(by[r]) / len(by[r]) for r in regs]
+    fig, ax = plt.subplots(figsize=(4.4, 3.4))
+    ax.bar(regs, means, color=[_REG_COLOR[r] for r in regs])
+    ax.axhline(0, color="#333", lw=0.8)
+    ax.set_ylabel("mean judge gain"); ax.set_title(title)
+    for i, v in enumerate(means):
+        ax.text(i, v, f"{v:+.3f}", ha="center", va="bottom" if v >= 0 else "top", fontsize=9)
+    ax.grid(axis="y", alpha=0.3); fig.tight_layout()
+    fig.savefig(pngpath, dpi=130); plt.close(fig)
+
+
+def _pearson(xs, ys):
+    n = len(xs)
+    if n < 2:
+        return float("nan")
+    mx, my = sum(xs) / n, sum(ys) / n
+    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    vx = sum((x - mx) ** 2 for x in xs); vy = sum((y - my) ** 2 for y in ys)
+    return cov / (vx * vy) ** 0.5 if vx and vy else float("nan")
+
+
+def plot_s51(rows, pngpath, title):
+    """predicted gain@5 (static grid) vs realized k=5 rejection gain, coloured by regime."""
+    if not rows:
+        return False
+    fig, ax = plt.subplots(figsize=(5.2, 4.4))
+    for reg in ("self", "intra", "cross"):
+        xs = [float(r["pred_gain_k"]) for r in rows if r["regime"] == reg]
+        ys = [float(r["realized_gain"]) for r in rows if r["regime"] == reg]
+        if xs:
+            ax.scatter(xs, ys, s=24, color=_REG_COLOR[reg], label=reg, alpha=0.8, edgecolor="none")
+    allx = [float(r["pred_gain_k"]) for r in rows]
+    ally = [float(r["realized_gain"]) for r in rows]
+    lo, hi = min(allx + ally + [0.0]), max(allx + ally + [0.0])
+    ax.plot([lo, hi], [lo, hi], "--", color="#888", lw=0.9, label="y = x")
+    r = _pearson(allx, ally)
+    ax.set_xlabel("predicted gain@5 (static grid)")
+    ax.set_ylabel("realized gain (k=5 rejection)")
+    ax.set_title(f"{title}   (r = {r:+.2f}, n = {len(allx)})")
+    ax.legend(fontsize=8); ax.grid(alpha=0.3); fig.tight_layout()
+    fig.savefig(pngpath, dpi=130); plt.close(fig)
+    return True
 
 
 def regime_summary(rows):
     import collections
     by = collections.defaultdict(list)
+    sum_g = collections.defaultdict(float)   # base-weighted relative = Σgain / Σbase (ratio of means,
+    sum_b = collections.defaultdict(float)   # robust to low-base outliers like llava)
     for r in rows:
         by[r["regime"]].append(r["gain"])
+        sum_g[r["regime"]] += r["gain"]
+        sum_b[r["regime"]] += r["p"]
     h = ["<table class=kv><tr><th>regime</th><th>n</th><th>mean gain</th><th>min</th><th>max</th></tr>"]
     for reg in ["self", "intra", "cross"]:
         g = by.get(reg, [])
         if g:
+            relstr = (f" <span class=rel>({sum_g[reg]/sum_b[reg]*100:+.0f}%)</span>"
+                      if sum_b[reg] else "")
             h.append(f"<tr><td>{reg}</td><td>{len(g)}</td>"
-                     f"<td><b>{sum(g)/len(g):+.2f}</b></td><td>{min(g):+.2f}</td><td>{max(g):+.2f}</td></tr>")
+                     f"<td><b>{sum(g)/len(g):+.2f}</b>{relstr}</td>"
+                     f"<td>{min(g):+.2f}</td><td>{max(g):+.2f}</td></tr>")
     h.append("</table>")
     return "".join(h)
 
 
-def s51_summary(ds="charxiv"):
+def load_s51(ds):
     path = f"{PLOTS}/{ds}_gain_vs_resampling.csv"
-    if not os.path.exists(path):
-        return "<p><em>(no §5.1 csv)</em></p>", ""
-    rows = list(csv.DictReader(open(path)))
+    return list(csv.DictReader(open(path))) if os.path.exists(path) else []
+
+
+def s51_text(rows):
+    if not rows:
+        return "<p class=note><em>(no §5.1 rejection data yet)</em></p>"
     xs = [float(r["pred_gain_k"]) for r in rows]
     ys = [float(r["realized_gain"]) for r in rows]
-    n = len(xs)
-    mx, my = sum(xs)/n, sum(ys)/n
-    cov = sum((x-mx)*(y-my) for x, y in zip(xs, ys))
-    vx = sum((x-mx)**2 for x in xs); vy = sum((y-my)**2 for y in ys)
-    pear = cov/(vx*vy)**0.5 if vx and vy else float("nan")
-    return (f"<p>Across <b>{n}</b> (solver, judge) cells with both a static-grid gain and a "
+    pear = _pearson(xs, ys)
+    return (f"<p>Across <b>{len(xs)}</b> (solver, judge) cells with both a static-grid gain and a "
             f"realized k=5 rejection run: <b>Pearson r = {pear:+.2f}</b>. "
-            f"Predicted judge gain tracks realized rejection-sampling improvement.</p>"), rows
+            f"Predicted judge gain tracks realized rejection-sampling improvement.</p>")
+
+
+def models_of(rows):
+    return sorted({r["solver"] for r in rows} | {r["verifier"] for r in rows},
+                  key=lambda m: (FAM_ORDER[family(m)], size(m), m))
+
+
+# variant render order + display labels; "avg" = the two datasets combined cell-by-cell.
+VKEYS = ["countbench", "charxiv", "avg"]
+VLABEL = {"countbench": "CountBench", "charxiv": "CharXiv", "avg": "Average (both datasets)"}
+
+
+def load_all():
+    """Load every per-dataset dict plus the combined 'avg' variant. Reusable by main() and by
+    the index.html table-splicer (vlm/update_index_tables.py)."""
+    DS = ["countbench", "charxiv"]
+    grid = {ds: load_grid(ds) for ds in DS}
+    base = {ds: base_with_fallback(ds, grid[ds]) for ds in DS}
+    maj5 = {ds: load_maj5(ds) for ds in DS}
+    zoom = {ds: load_zoom(ds) for ds in DS}
+    intra = {ds: compute_intra(grid[ds]) for ds in DS}
+    s51 = {ds: load_s51(ds) for ds in DS}
+    # the "Average" variant: combine the two datasets cell-by-cell (intersection of shared cells)
+    grid["avg"] = avg_grid(grid["countbench"], grid["charxiv"])
+    base["avg"] = mean_dict([base["countbench"], base["charxiv"]])
+    maj5["avg"] = mean_dict([maj5["countbench"], maj5["charxiv"]])
+    intra["avg"] = mean_dict([intra["countbench"], intra["charxiv"]])
+    zoom["avg"] = avg_zoom([zoom["countbench"], zoom["charxiv"]])
+    s51["avg"] = avg_s51(s51["countbench"], s51["charxiv"])
+    return dict(grid=grid, base=base, maj5=maj5, zoom=zoom, intra=intra, s51=s51)
 
 
 def main():
-    rows = load_grid()
-    base_v3 = load_base_v3()                  # v3-scored single-shot base per model
-    bacc = {}
-    for r in rows:
-        bacc.setdefault(r["solver"], r["p"])
-    bacc.update(base_v3)                       # prefer v3 base where available
-    zoom_png, zoom_tbl = zoom_curves(bacc)
-    s51_txt, _ = s51_summary("charxiv")
-    s51_cb_txt, s51_cb_rows = s51_summary("countbench")
+    d = load_all()
+    grid, base, maj5, zoom, intra, s51 = (d["grid"], d["base"], d["maj5"],
+                                          d["zoom"], d["intra"], d["s51"])
+
+    # generate a consistent trio of plots (report-scoped names, so standalone plots aren't clobbered)
+    zoom_tbl = {}
+    for vk in VKEYS:
+        plot_regime_bar(grid[vk], f"{PLOTS}/{vk}_regime_report.png", VLABEL[vk])
+        if s51[vk]:
+            plot_s51(s51[vk], f"{PLOTS}/{vk}_s51_report.png", VLABEL[vk])
+        _, zoom_tbl[vk] = render_zoom(zoom[vk], base[vk], f"{PLOTS}/{vk}_zoom_report.png", VLABEL[vk])
 
     css = """
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:2rem auto;
@@ -400,58 +623,102 @@ def main():
     .card{background:#f8f9fa;border:1px solid #e3e6e8;border-radius:8px;padding:1rem;margin:.5rem 0}
     a.viewer{display:inline-block;margin:.2rem .4rem .2rem 0;padding:.3rem .7rem;background:#2c3e50;
              color:#fff;border-radius:5px;text-decoration:none;font-size:.85rem}
+    h3.ds{margin:1.5rem 0 .3rem;color:#2c3e50;font-size:1.02rem;font-weight:700;
+          border-left:4px solid #2c3e50;padding-left:.55rem;letter-spacing:.01em}
+    h3.ds.avg{border-left-color:#8e44ad;color:#6c3483}
+    .rel{color:#8a8f96;font-size:.82em;font-weight:400;white-space:nowrap}
+    .mx tr.avgrow td,.mx tr.avgrow th{border-top:2px solid #2c3e50;background:#eef2f5;font-weight:700}
     """
     P = []
-    P.append(f"<!doctype html><meta charset=utf-8><title>CharXiv — Verification Pay-Off Replication</title><style>{css}</style>")
-    P.append("<h1>When Does Verification Pay Off? — CharXiv (VLM replication)</h1>")
-    P.append("<p class=note>13 models · 4 families · solver×verifier grid (169 cells) · §5.1 rejection (k=5) · agentic-zoom. "
-             "Self = model judging itself; intra = same family, different size; cross = different family.</p>")
+    P.append(f"<!doctype html><meta charset=utf-8><title>Verification Pay-Off — CountBench &amp; CharXiv</title><style>{css}</style>")
+    P.append("<h1>When Does Verification Pay Off? — VLM replication</h1>")
+    P.append("<p class=note>13 models · 4 families · solver×verifier grid (169 cells / dataset) · §5.1 rejection (k=5) · agentic-zoom. "
+             "Self = model judging itself; intra = same family, different size; cross = different family. "
+             "<b>Every plot and table below is shown three ways: CountBench, CharXiv, then the two averaged together</b> "
+             "(the Average combines shared cells — mean of the CountBench and CharXiv value).</p>")
 
+    def ds_head(vk):
+        cls = "ds avg" if vk == "avg" else "ds"
+        return f"<h3 class='{cls}'>{VLABEL[vk]}</h3>"
+
+    # 1 · Per-model summary
     P.append("<h2>1 · Per-model summary <span class=note>(test-time compute vs single-shot base)</span></h2>")
-    P.append("<p class=note>One row per solver. <b>base acc</b> = single-shot accuracy "
-             "(v3 scorer, same as every other column); "
+    P.append("<p class=note>One row per solver. <b>base acc</b> = single-shot accuracy; "
              "<b>maj@5</b> = majority vote of 5 independent samples; "
              "<b>avg intra-family judge (k=5)</b> = mean over same-family judges of rejection-sampling "
              "capped at 5 tries; <b>best zoom</b> = best accuracy across the 2/4/8-crop agentic-vision "
-             "budgets. All comparison columns show only the Δ vs base — green number = gain, red = drop; "
-             "<b>bold</b> = best accuracy in the row. "
-             "Zoom n/a for llava (single-image only) and gemma-4-12B (vLLM bug).</p>")
-    P.append(summary_table(rows, base_v3))
+             "budgets. Comparison columns show only the Δ vs base — green = gain, red = drop; "
+             "<b>bold</b> = best accuracy in the row. Zoom n/a for llava (single-image only) and gemma-4-12B (vLLM bug).</p>")
+    for vk in VKEYS:
+        P.append(ds_head(vk))
+        P.append(render_summary(models_of(grid[vk]), base[vk], maj5[vk], intra[vk], zoom[vk]))
 
+    # 2 · Judge gain by regime
     P.append("<h2>2 · Judge gain by regime <span class=note>(the headline)</span></h2>")
-    P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/charxiv_gain_by_regime.png", "max-width:480px") + "</div>")
-    P.append("<div class=card>" + regime_summary(rows) +
-             "<p class=note>Gain = judge-accept precision − solver accuracy (asymptotic resampling lift). "
-             "<b>Self-judging pays off least</b> — models rubber-stamp their own outputs; cross-family is most honest.</p></div></div>")
+    P.append("<p class=note>Gain = judge-accept precision − solver accuracy (asymptotic resampling lift). "
+             "<b>Self-judging pays off least</b> — models rubber-stamp their own outputs; cross-family is most honest.</p>")
+    for vk in VKEYS:
+        P.append(ds_head(vk))
+        P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/{vk}_regime_report.png", "max-width:440px") + "</div>")
+        P.append("<div class=card>" + regime_summary(grid[vk]) + "</div></div>")
 
+    # 3 · §5.1 validation
     P.append("<h2>3 · §5.1 — does gain predict realized resampling?</h2>")
-    P.append("<h3 class=note>CharXiv</h3>")
-    P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/charxiv_gain_vs_resampling.png", "max-width:520px") + "</div>")
-    P.append("<div class=card>" + s51_txt + "</div></div>")
-    if s51_cb_rows:
-        P.append("<h3 class=note>CountBench</h3>")
-        P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/countbench_gain_vs_resampling.png", "max-width:520px") + "</div>")
-        P.append("<div class=card>" + s51_cb_txt +
-                 "<p class=note>CountBench validates the §5.1 story even more tightly than CharXiv "
-                 "(higher predicted↔realized correlation), and cross-family judges deliver the largest "
-                 "realized resampling gain. Grid still filling in — cells update as rejection runs land.</p></div></div>")
+    P.append("<p class=note>Each point is a (solver, judge) cell: x = gain the static grid predicts at k=5, "
+             "y = the accuracy lift actually realized by running judge-gated rejection sampling (k=5). "
+             "A tight y≈x band means the cheap static gain forecasts the expensive realized payoff.</p>")
+    for vk in VKEYS:
+        P.append(ds_head(vk))
+        if s51[vk]:
+            P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/{vk}_s51_report.png", "max-width:520px") + "</div>")
+            P.append("<div class=card>" + s51_text(s51[vk]) + "</div></div>")
+        else:
+            P.append("<p class=note><em>(no §5.1 rejection data yet for this dataset)</em></p>")
 
-    P.append("<h2>4 · Gain / F1 / FNR matrices <span class=note>(rows = JUDGE model, "
+    # 4 · Realized (actual) judge gain from the k=5 rejection loop
+    P.append("<h2>4 · Realized judge gain <span class=note>(the ACTUAL measured payoff)</span></h2>")
+    P.append("<p class=note>§2 above is the gain <i>predicted</i> from a one-shot judge pass. "
+             "<b>This is the gain actually realized</b> by running the full judge-gated rejection loop "
+             "(solve → judge → re-solve only the rejected, up to 5 attempts): "
+             "<b>final accuracy − base accuracy</b>. Parentheses show it as a % of base. "
+             "Rows = JUDGE, cols = SOLVER; diagonal = self; last column = judge's base-weighted average. "
+             "Cells fill in as rejection runs land — sparse cells (–) just aren't computed yet.</p>")
+    for vk in VKEYS:
+        rr = realized_rows(s51[vk])
+        P.append(ds_head(vk))
+        if not rr:
+            P.append("<p class=note><em>(no rejection data yet for this dataset)</em></p>")
+            continue
+        P.append("<div class=grid2><div class=card>" + regime_summary(rr) +
+                 "<p class=note>mean realized gain by regime (base-weighted % in parens).</p></div></div>")
+        P.append(matrix_table(rr, "gain", True,
+                              "Realized gain (final − base accuracy, k=5 rejection loop)",
+                              "green = the judge loop lifts accuracy most, red = least/hurts; % of base in parens.",
+                              True))
+
+    # 5 · Matrices
+    P.append("<h2>5 · Gain / F1 / FNR matrices <span class=note>(rows = JUDGE model, "
              "cols = SOLVER model; diagonal = self; last column = each judge's average across solvers)</span></h2>")
-    P.append(matrix_table(rows, "gain", True,
-                          "Judge gain (judge-accept precision − solver accuracy)",
-                          "colour scaled worst→best across this matrix: green = the judge helps resampling most, red = least/hurts."))
-    P.append(matrix_table(rows, "f1", True,
-                          "Judge F1 (accept-decision)",
-                          "colour worst→best: green = best accept/reject discrimination, red = worst."))
-    P.append(matrix_table(rows, "fnr", False,
-                          "Judge FNR (miss rate on correct answers)",
-                          "lower is better, so colour is inverted: green = lenient (accepts correct), red = harsh (rejects correct, e.g. llava / over-strict judges)."))
+    mspecs = [("gain", True, "Judge gain (judge-accept precision − solver accuracy)",
+               "colour scaled worst→best across this matrix: green = the judge helps resampling most, red = least/hurts. "
+               "Each cell also shows the gain as a % of the solver's base accuracy (relative lift), in parentheses.", True),
+              ("f1", True, "Judge F1 (accept-decision)",
+               "colour worst→best: green = best accept/reject discrimination, red = worst.", False),
+              ("fnr", False, "Judge FNR (miss rate on correct answers)",
+               "lower is better, so colour is inverted: green = lenient (accepts correct), red = harsh (rejects correct, e.g. llava / over-strict judges).", False)]
+    for vk in VKEYS:
+        P.append(ds_head(vk))
+        for field, good_high, title, note, show_rel in mspecs:
+            P.append(matrix_table(grid[vk], field, good_high, title, note, show_rel))
 
-    P.append("<h2>5 · Agentic-zoom — accuracy vs budget</h2>")
-    P.append("<div class=card>" + zoom_tbl +
-             "<p class=note>Δ vs the v3 base at each crop budget. Zoom helps gemma / small-Qwen but hurts the "
-             "InternVL family (it won't emit the required &lt;tool_call&gt; markup, so crops never fire).</p></div>")
+    # 6 · Agentic-zoom
+    P.append("<h2>6 · Agentic-zoom — accuracy vs budget</h2>")
+    P.append("<p class=note>Δ vs base at each crop budget. Zoom helps gemma / small-Qwen but hurts the "
+             "InternVL family (it won't emit the required &lt;tool_call&gt; markup, so crops never fire).</p>")
+    for vk in VKEYS:
+        P.append(ds_head(vk))
+        P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/{vk}_zoom_report.png", "max-width:520px") + "</div>")
+        P.append("<div class=card>" + zoom_tbl[vk] + "</div></div>")
 
     doc = "\n".join(P)
     os.makedirs(REPORT_DIR, exist_ok=True)
