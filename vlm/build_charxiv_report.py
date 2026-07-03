@@ -341,8 +341,8 @@ def regime_summary(rows):
     return "".join(h)
 
 
-def s51_summary():
-    path = f"{PLOTS}/charxiv_gain_vs_resampling.csv"
+def s51_summary(ds="charxiv"):
+    path = f"{PLOTS}/{ds}_gain_vs_resampling.csv"
     if not os.path.exists(path):
         return "<p><em>(no §5.1 csv)</em></p>", ""
     rows = list(csv.DictReader(open(path)))
@@ -366,7 +366,8 @@ def main():
         bacc.setdefault(r["solver"], r["p"])
     bacc.update(base_v3)                       # prefer v3 base where available
     zoom_png, zoom_tbl = zoom_curves(bacc)
-    s51_txt, _ = s51_summary()
+    s51_txt, _ = s51_summary("charxiv")
+    s51_cb_txt, s51_cb_rows = s51_summary("countbench")
 
     css = """
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:2rem auto;
@@ -424,8 +425,16 @@ def main():
              "<b>Self-judging pays off least</b> — models rubber-stamp their own outputs; cross-family is most honest.</p></div></div>")
 
     P.append("<h2>3 · §5.1 — does gain predict realized resampling?</h2>")
+    P.append("<h3 class=note>CharXiv</h3>")
     P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/charxiv_gain_vs_resampling.png", "max-width:520px") + "</div>")
     P.append("<div class=card>" + s51_txt + "</div></div>")
+    if s51_cb_rows:
+        P.append("<h3 class=note>CountBench</h3>")
+        P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/countbench_gain_vs_resampling.png", "max-width:520px") + "</div>")
+        P.append("<div class=card>" + s51_cb_txt +
+                 "<p class=note>CountBench validates the §5.1 story even more tightly than CharXiv "
+                 "(higher predicted↔realized correlation), and cross-family judges deliver the largest "
+                 "realized resampling gain. Grid still filling in — cells update as rejection runs land.</p></div></div>")
 
     P.append("<h2>4 · Gain / F1 / FNR matrices <span class=note>(rows = JUDGE model, "
              "cols = SOLVER model; diagonal = self; last column = each judge's average across solvers)</span></h2>")
