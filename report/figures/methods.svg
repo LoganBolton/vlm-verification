@@ -52,26 +52,26 @@
     .solver{fill:#dbe6f1;stroke:#4d6b8a;stroke-width:1.3;}
     .judge{fill:#e6dcef;stroke:#7a5c8a;stroke-width:1.3;}
     .answer{fill:#efece5;stroke:#9a9184;stroke-width:1.1;}
-    .caprule{stroke:#cfc7b8;stroke-width:1;}
+    .caprule{stroke:#DCDCDC;stroke-width:1;}
   </style>
 
   <rect x="0" y="0" width="1180" height="580" fill="#ffffff"/>
 
   <!-- uniform panels -->
-  <rect x="14"  y="16" width="276" height="548" rx="8" fill="#faf9f5" stroke="#d8d0c2" stroke-width="1.1"/>
-  <rect x="304" y="16" width="276" height="548" rx="8" fill="#faf9f5" stroke="#d8d0c2" stroke-width="1.1"/>
-  <rect x="594" y="16" width="276" height="548" rx="8" fill="#faf9f5" stroke="#d8d0c2" stroke-width="1.1"/>
-  <rect x="884" y="16" width="282" height="548" rx="8" fill="#faf9f5" stroke="#d8d0c2" stroke-width="1.1"/>
+  <rect x="14"  y="16" width="276" height="548" rx="8" fill="#FFFFFF" stroke="#CFCFCF" stroke-width="1.1"/>
+  <rect x="304" y="16" width="276" height="548" rx="8" fill="#FFFFFF" stroke="#CFCFCF" stroke-width="1.1"/>
+  <rect x="594" y="16" width="276" height="548" rx="8" fill="#FFFFFF" stroke="#CFCFCF" stroke-width="1.1"/>
+  <rect x="884" y="16" width="282" height="548" rx="8" fill="#FFFFFF" stroke="#CFCFCF" stroke-width="1.1"/>
 
   <!-- uniform title bands -->
-  <rect x="14"  y="16" width="276" height="42" rx="8" fill="#ece7dc"/>
-  <rect x="14"  y="50" width="276" height="8" fill="#ece7dc"/>
-  <rect x="304" y="16" width="276" height="42" rx="8" fill="#ece7dc"/>
-  <rect x="304" y="50" width="276" height="8" fill="#ece7dc"/>
-  <rect x="594" y="16" width="276" height="42" rx="8" fill="#ece7dc"/>
-  <rect x="594" y="50" width="276" height="8" fill="#ece7dc"/>
-  <rect x="884" y="16" width="282" height="42" rx="8" fill="#ece7dc"/>
-  <rect x="884" y="50" width="282" height="8" fill="#ece7dc"/>
+  <rect x="14"  y="16" width="276" height="42" rx="8" fill="#F0F0F0"/>
+  <rect x="14"  y="50" width="276" height="8" fill="#F0F0F0"/>
+  <rect x="304" y="16" width="276" height="42" rx="8" fill="#F0F0F0"/>
+  <rect x="304" y="50" width="276" height="8" fill="#F0F0F0"/>
+  <rect x="594" y="16" width="276" height="42" rx="8" fill="#F0F0F0"/>
+  <rect x="594" y="50" width="276" height="8" fill="#F0F0F0"/>
+  <rect x="884" y="16" width="282" height="42" rx="8" fill="#F0F0F0"/>
+  <rect x="884" y="50" width="282" height="8" fill="#F0F0F0"/>
 
   <text class="title" x="152" y="39" text-anchor="middle">Baseline</text>
   <text class="title" x="442" y="39" text-anchor="middle">Majority Vote</text>
