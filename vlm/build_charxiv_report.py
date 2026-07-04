@@ -478,6 +478,39 @@ def plot_regime_bar(rows, pngpath, title):
     fig.savefig(pngpath, dpi=130); plt.close(fig)
 
 
+def plot_actual_regime_points(rows, pngpath):
+    """Relative actual rejection-sampling gain by regime, pooled across datasets."""
+    import collections
+    by = collections.defaultdict(list)
+    for r in rows:
+        base = float(r["p"])
+        if base:
+            by[r["regime"]].append(float(r["gain"]) / base)
+    regs = [r for r in ("self", "intra", "cross") if by.get(r)]
+    means = [sum(by[r]) / len(by[r]) for r in regs]
+
+    fig, ax = plt.subplots(figsize=(5.8, 4.8))
+    xs = list(range(len(regs)))
+    ax.bar(xs, means, color=[_REG_COLOR[r] for r in regs], alpha=0.9, width=0.6)
+    for i, reg in enumerate(regs):
+        vals = by[reg]
+        # Deterministic narrow spread so overlapping points remain visible without randomness.
+        offsets = [((j % 9) - 4) * 0.012 for j in range(len(vals))]
+        ax.scatter([i + off for off in offsets], vals, color="black", s=14, alpha=0.45, zorder=3)
+        ax.text(i + 0.19, means[i], f"{means[i]*100:+.0f}%", ha="center",
+                va="bottom" if means[i] >= 0 else "top", fontsize=11, color="#1a7f37")
+    ax.axhline(0, color="black", lw=0.7)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([f"{r.capitalize()}\n(n={len(by[r])})" for r in regs])
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y*100:.0f}%"))
+    ax.set_ylabel("Relative accuracy increase vs baseline")
+    ax.set_title("Accuracy Gain by Judge Type")
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(pngpath, dpi=150)
+    plt.close(fig)
+
+
 def _pearson(xs, ys):
     n = len(xs)
     if n < 2:
@@ -488,8 +521,30 @@ def _pearson(xs, ys):
     return cov / (vx * vy) ** 0.5 if vx and vy else float("nan")
 
 
+def _linear_fit(xs, ys):
+    """Least-squares y = slope*x + intercept."""
+    n = len(xs)
+    if n < 2:
+        return float("nan"), float("nan")
+    mx, my = sum(xs) / n, sum(ys) / n
+    vx = sum((x - mx) ** 2 for x in xs)
+    if vx == 0:
+        return float("nan"), float("nan")
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / vx
+    return slope, my - slope * mx
+
+
+def _one_row_per_pair(rows):
+    """Keep the last row encountered for each solver-verifier pair."""
+    by_pair = {}
+    for r in rows:
+        by_pair[(r["solver"], r["verifier"])] = r
+    return [by_pair[k] for k in sorted(by_pair)]
+
+
 def plot_s51(rows, pngpath, title):
     """predicted gain@5 (static grid) vs realized k=5 rejection gain, coloured by regime."""
+    rows = _one_row_per_pair(rows)
     if not rows:
         return False
     fig, ax = plt.subplots(figsize=(5.2, 4.4))
@@ -500,13 +555,27 @@ def plot_s51(rows, pngpath, title):
             ax.scatter(xs, ys, s=24, color=_REG_COLOR[reg], label=reg, alpha=0.8, edgecolor="none")
     allx = [float(r["pred_gain_k"]) for r in rows]
     ally = [float(r["realized_gain"]) for r in rows]
-    lo, hi = min(allx + ally + [0.0]), max(allx + ally + [0.0])
-    ax.plot([lo, hi], [lo, hi], "--", color="#888", lw=0.9, label="y = x")
     r = _pearson(allx, ally)
-    ax.set_xlabel("predicted gain@5 (static grid)")
-    ax.set_ylabel("realized gain (k=5 rejection)")
-    ax.set_title(f"{title}   (r = {r:+.2f}, n = {len(allx)})")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3); fig.tight_layout()
+    slope, intercept = _linear_fit(allx, ally)
+    xmin, xmax = min(allx + [0.0]), max(allx + [0.0])
+    ymin, ymax = min(ally + [0.0]), max(ally + [0.0])
+    xpad = 0.08 * (xmax - xmin) or 0.01
+    ypad = 0.08 * (ymax - ymin) or 0.01
+    xmin, xmax = xmin - xpad, xmax + xpad
+    ymin, ymax = ymin - ypad, ymax + ypad
+    if slope == slope:
+        ax.plot([xmin, xmax], [slope * xmin + intercept, slope * xmax + intercept],
+                "-", color="#444", lw=1.1)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.text(0.04, 0.96, f"r = {r:.2f}\nslope = {slope:.2f}",
+            transform=ax.transAxes, ha="left", va="top", fontsize=9,
+            bbox=dict(boxstyle="round,pad=0.25", facecolor="#fff7cc", edgecolor="#e7d98a", alpha=0.92))
+    ax.set_xlabel("Predicted Gain")
+    ax.set_ylabel("Actual Gain")
+    ax.set_title("Predicted vs Actual Gain for VLM Judge\nRejection Sampling")
+    ax.legend(fontsize=10, markerscale=1.2)
+    ax.grid(alpha=0.3); fig.tight_layout()
     fig.savefig(pngpath, dpi=130); plt.close(fig)
     return True
 
@@ -539,14 +608,17 @@ def load_s51(ds):
 
 
 def s51_text(rows):
+    rows = _one_row_per_pair(rows)
     if not rows:
         return "<p class=note><em>(no §5.1 rejection data yet)</em></p>"
     xs = [float(r["pred_gain_k"]) for r in rows]
     ys = [float(r["realized_gain"]) for r in rows]
     pear = _pearson(xs, ys)
-    return (f"<p>Across <b>{len(xs)}</b> (solver, judge) cells with both a static-grid gain and a "
-            f"realized k=5 rejection run: <b>Pearson r = {pear:+.2f}</b>. "
-            f"Predicted judge gain tracks realized rejection-sampling improvement.</p>")
+    slope, _ = _linear_fit(xs, ys)
+    return (f"<p>Across <b>{len(xs)}</b> (solver, judge) cells with both a static-grid gain and an "
+            f"actual k=5 rejection run: <b>Pearson r = {pear:+.2f}</b>, "
+            f"<b>regression slope = {slope:+.2f}</b>. "
+            f"Predicted judge gain tracks actual rejection-sampling improvement.</p>")
 
 
 def models_of(rows):
@@ -591,6 +663,11 @@ def main():
         if s51[vk]:
             plot_s51(s51[vk], f"{PLOTS}/{vk}_s51_report.png", VLABEL[vk])
         _, zoom_tbl[vk] = render_zoom(zoom[vk], base[vk], f"{PLOTS}/{vk}_zoom_report.png", VLABEL[vk])
+    actual_regime_png = f"{PLOTS}/both_datasets_actual_gain_by_regime.png"
+    plot_actual_regime_points(realized_rows(s51["countbench"]) + realized_rows(s51["charxiv"]),
+                              actual_regime_png)
+    os.makedirs(REPORT_FIGS, exist_ok=True)
+    shutil.copyfile(actual_regime_png, f"{REPORT_FIGS}/both_datasets_actual_gain_by_regime.png")
 
     css = """
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:2rem auto;

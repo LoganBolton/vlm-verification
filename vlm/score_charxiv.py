@@ -81,6 +81,19 @@ def _contiguous(sub: List[str], seq: List[str]) -> bool:
     return any(seq[i:i + len(sub)] == sub for i in range(len(seq) - len(sub) + 1))
 
 
+_OPT_RE = re.compile(r"^\(?\s*([a-eA-E])\s*\)\s*(.*)$")
+
+
+def _option(gold: str):
+    """If gold is an option-labelled answer -- '(b) OPT', 'b) OPT', '(d)', 'a)' -- return
+    (letter, text) with letter lowercased and text possibly empty; else None. The closing ')'
+    is required, so plain answers like 'case det' or '0.13' are never treated as options."""
+    m = _OPT_RE.match(str(gold).strip())
+    if not m:
+        return None
+    return m.group(1).lower(), m.group(2).strip()
+
+
 def is_correct(gold: str, response: str) -> bool:
     """Match the gold answer against the model's FINAL answer only (not the reasoning).
 
@@ -106,6 +119,16 @@ def is_correct(gold: str, response: str) -> bool:
     # "ETKI (J=50)" or "fc1" matches on the digits alone -> false positive.
     if gn and gn == pn and not any(c.isalpha() for c in g):
         return True
+    # Option-labelled gold ("(b) OPT"): accept the answer if it gives just the option LETTER
+    # ("b" / "(b)") or just the option TEXT ("OPT") -- not only the full "(b) OPT". The reverse
+    # (gold "OPT", answer "(b) OPT") is already covered by the contiguous check above.
+    opt = _option(gold)
+    if opt:
+        letter, text = opt
+        if p == letter:
+            return True
+        if text and is_correct(text, response):
+            return True
     return False
 
 

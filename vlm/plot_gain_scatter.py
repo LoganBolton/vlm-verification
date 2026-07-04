@@ -42,6 +42,17 @@ def pearson(xs, ys):
     return cov / (vx * vy) ** 0.5 if vx > 0 and vy > 0 else float("nan")
 
 
+def linear_fit(xs, ys):
+    """Least-squares y = slope*x + intercept."""
+    n = len(xs)
+    if n < 2: return float("nan"), float("nan")
+    mx, my = sum(xs) / n, sum(ys) / n
+    vx = sum((x - mx) ** 2 for x in xs)
+    if vx <= 0: return float("nan"), float("nan")
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / vx
+    return slope, my - slope * mx
+
+
 def spearman(xs, ys):
     def rank(v):
         order = sorted(range(len(v)), key=lambda i: v[i])
@@ -100,7 +111,7 @@ def main():
 
     pred = predicted_gain(grid_dir, ds, args.k)
 
-    rows = []
+    rows_by_pair = {}
     for mp in glob.glob(f"{rej_dir}/*/metrics.json"):
         d = json.load(open(mp)); md = d["metadata"]
         if md.get("verifier_model") in (None, "oracle"): continue
@@ -109,12 +120,15 @@ def main():
         rg = realized_gain(mp)
         if rg is None: continue
         pg = pred[(s, v)]
-        rows.append(dict(solver=s, verifier=v, regime=regime(s, v),
-                         p=pg["p"], pred_gain_k=pg["gain_k"], pred_gain_inf=pg["gain_inf"],
-                         base=rg["base"], final=rg["final"], realized_gain=rg["realized"],
-                         attempts=rg["attempts"], total=rg["total"]))
+        row = dict(solver=s, verifier=v, regime=regime(s, v),
+                   p=pg["p"], pred_gain_k=pg["gain_k"], pred_gain_inf=pg["gain_inf"],
+                   base=rg["base"], final=rg["final"], realized_gain=rg["realized"],
+                   attempts=rg["attempts"], total=rg["total"], _mtime=os.path.getmtime(mp))
+        key = (s, v)
+        if key not in rows_by_pair or row["_mtime"] > rows_by_pair[key]["_mtime"]:
+            rows_by_pair[key] = row
 
-    rows.sort(key=lambda r: (r["solver"], r["verifier"]))
+    rows = sorted(rows_by_pair.values(), key=lambda r: (r["solver"], r["verifier"]))
     csv_path = f"{out_dir}/{ds}_gain_vs_resampling.csv"
     cols = ["solver", "verifier", "regime", "p", "pred_gain_k", "pred_gain_inf",
             "base", "final", "realized_gain", "attempts", "total"]
@@ -129,7 +143,8 @@ def main():
 
     xs = [r["pred_gain_k"] for r in rows]; ys = [r["realized_gain"] for r in rows]
     pr, sr = pearson(xs, ys), spearman(xs, ys)
-    print(f"predicted gain@{args.k} vs realized:  Pearson r={pr:+.3f}  Spearman rho={sr:+.3f}")
+    slope, intercept = linear_fit(xs, ys)
+    print(f"predicted gain@{args.k} vs realized:  Pearson r={pr:+.3f}  slope={slope:+.3f}  Spearman rho={sr:+.3f}")
     for reg in ["self", "intra", "cross"]:
         g = [r for r in rows if r["regime"] == reg]
         if g:
@@ -138,11 +153,12 @@ def main():
 
     # ---- scatter ----
     fig, ax = plt.subplots(figsize=(7, 6))
-    # zoom tight to the data cloud (gains are small) instead of padding out to the origin
-    xmin, xmax = min(xs), max(xs); ymin, ymax = min(ys), max(ys)
-    padx = 0.06 * (xmax - xmin) or 0.005; pady = 0.06 * (ymax - ymin) or 0.005
-    lo, hi = min(xmin, ymin), max(xmax, ymax)
-    ax.plot([lo, hi], [lo, hi], "--", color="gray", lw=1, label="y = x")
+    xmin, xmax = min(xs + [0.0]), max(xs + [0.0])
+    ymin, ymax = min(ys + [0.0]), max(ys + [0.0])
+    xpad = 0.08 * (xmax - xmin) or 0.01
+    ypad = 0.08 * (ymax - ymin) or 0.01
+    xmin, xmax = xmin - xpad, xmax + xpad
+    ymin, ymax = ymin - ypad, ymax + ypad
     ax.axhline(0, color="black", lw=0.5); ax.axvline(0, color="black", lw=0.5)
     for reg in ["self", "intra", "cross"]:
         g = [r for r in rows if r["regime"] == reg]
@@ -150,13 +166,18 @@ def main():
         ax.scatter([r["pred_gain_k"] for r in g], [r["realized_gain"] for r in g],
                    s=60, alpha=0.85, color=REGIME_COLOR[reg], edgecolor="white", lw=0.7,
                    label=f"{reg} (n={len(g)})")
-    ax.set_xlim(xmin - padx, xmax + padx)
-    ax.set_ylim(ymin - pady, ymax + pady)
-    ax.set_xlabel(f"PREDICTED judge gain@{args.k}   (static grid: acc@{args.k} − solver acc)")
-    ax.set_ylabel("REALIZED rejection-sampling gain   (acc_final − acc_0)")
-    ax.set_title(f"§5.1  {ds}: predicted gain vs realized resampling\n"
-                 f"Pearson r={pr:+.3f}  Spearman ρ={sr:+.3f}  (n={len(rows)})")
-    ax.legend(loc="best", fontsize=9)
+    if slope == slope:
+        ax.plot([xmin, xmax], [slope * xmin + intercept, slope * xmax + intercept],
+                "-", color="#444", lw=1.2)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.text(0.04, 0.96, f"r = {pr:.3f}\nslope = {slope:.3f}",
+            transform=ax.transAxes, ha="left", va="top", fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.25", facecolor="#fff7cc", edgecolor="#e7d98a", alpha=0.92))
+    ax.set_xlabel("Predicted Gain")
+    ax.set_ylabel("Actual Gain")
+    ax.set_title("Predicted vs Actual Gain for VLM Judge\nRejection Sampling")
+    ax.legend(loc="best", fontsize=11, markerscale=1.2)
     fig.tight_layout()
     png = f"{out_dir}/{ds}_gain_vs_resampling.png"
     fig.savefig(png, dpi=130); print(f"wrote {png}\nwrote {csv_path}")
