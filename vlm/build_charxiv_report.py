@@ -576,7 +576,7 @@ def plot_s51(rows, pngpath, title):
     ax.set_title("Predicted vs Actual Gain for VLM Judge\nRejection Sampling")
     ax.legend(fontsize=10, markerscale=1.2)
     ax.grid(alpha=0.3); fig.tight_layout()
-    fig.savefig(pngpath, dpi=130); plt.close(fig)
+    fig.savefig(pngpath, dpi=300); plt.close(fig)
     return True
 
 
