@@ -240,6 +240,53 @@ def compute_intra(rows):
     return {s: tot[s] / cnt[s] for s in tot}
 
 
+def compute_realized(s51_rows, regime, base):
+    """short-name -> resulting accuracy (base + mean REALIZED rejection gain) over the solver's
+    <regime>-family judges. Uses the actual measured k=5 rejection gain (acc_final − base), NOT the
+    predicted acc@k from the static grid. Returned as base+gain so the table's Δ-vs-base column shows
+    exactly the realized gain, consistent with the base-acc anchor column."""
+    tot, cnt = {}, {}
+    for r in s51_rows:
+        if r.get("regime") != regime:
+            continue
+        s = r["solver"]
+        try:
+            g = float(r["realized_gain"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        tot[s] = tot.get(s, 0.0) + g
+        cnt[s] = cnt.get(s, 0) + 1
+    out = {}
+    for s in tot:
+        b = base.get(s)
+        if b is not None:
+            out[s] = b + tot[s] / cnt[s]
+    return out
+
+
+def compute_realized_best(s51_rows, regime, base):
+    """short-name -> accuracy of the solver's SINGLE BEST <regime>-family judge (base + the MAX
+    realized rejection gain over that regime's judges). An oracle judge-selection ceiling per solver:
+    'if you'd picked the best cross-family judge, how far does k=5 rejection get you?'"""
+    best = {}
+    for r in s51_rows:
+        if r.get("regime") != regime:
+            continue
+        s = r["solver"]
+        try:
+            g = float(r["realized_gain"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if s not in best or g > best[s]:
+            best[s] = g
+    out = {}
+    for s in best:
+        b = base.get(s)
+        if b is not None:
+            out[s] = b + best[s]
+    return out
+
+
 def base_with_fallback(ds, rows):
     """Base accuracy per solver: measured base (v3/latest) where available, else the grid's p."""
     b = {}
@@ -359,12 +406,17 @@ def matrix_table(rows, field, good_high, title, note, show_rel=False):
     return "".join(h)
 
 
-def render_summary(models, base, maj5, intra, zoomdata, pct_only=False):
-    """One row per solver. base acc | maj@5 | avg intra-family judge (k=5) | best zoom.
+def render_summary(models, base, maj5, cross, zoomdata, pct_only=False, crossbest=None):
+    """One row per solver. base acc | maj@5 | avg cross-family judge (k=5) | best zoom.
+    The cross-family judge column is the REALIZED rejection-sampling accuracy (base + actual measured
+    gain), so its Δ-vs-base is the true payoff — not the predicted acc@k.
+    crossbest: optional short-name->acc dict; when given, an extra "best cross-family judge (k=5)"
+    column (the solver's single best cross-family judge) is inserted before best zoom.
     Comparison columns show the Δ vs base (number coloured green/red); bold = best in row.
     pct_only: show ONLY the relative % change (no raw Δ) — used for the summarised index.html.
     All inputs are precomputed short-name -> value dicts (zoomdata is {model:{budget:acc}})."""
     zoombest = {m: max(v.values()) for m, v in zoomdata.items() if v}
+    show_best = crossbest is not None
 
     def dcell(val, b, is_best):
         if val is None:
@@ -378,29 +430,33 @@ def render_summary(models, base, maj5, intra, zoomdata, pct_only=False):
         return (f"<td class=c><span style='color:{delta_color(d)}'>{num}</span>"
                 f"{rel_span(d, b)}</td>")
 
+    bestcol_h = "<th>best cross-family<br>judge (k=5)</th>" if show_best else ""
     h = ["<table class='mx sum'>",
          "<tr><th class=rowh>solver model</th><th>base<br>acc</th><th>maj@5</th>"
-         "<th>avg intra-family<br>judge (k=5)</th><th>best<br>zoom</th></tr>"]
+         "<th>avg cross-family<br>judge (k=5)</th>" + bestcol_h + "<th>best<br>zoom</th></tr>"]
     # accumulate per-column changes (Δ and % vs base) so we can average them in a footer row
-    dlt = {"maj5": [], "intra": [], "zoom": []}
-    pct = {"maj5": [], "intra": [], "zoom": []}
+    dlt = {"maj5": [], "cross": [], "crossbest": [], "zoom": []}
+    pct = {"maj5": [], "cross": [], "crossbest": [], "zoom": []}
     bases = []
     for m in models:
         b = base.get(m)
         if b is None:
             continue
         bases.append(b)
-        iv, z, mj = intra.get(m), zoombest.get(m), maj5.get(m)
-        for key, val in (("maj5", mj), ("intra", iv), ("zoom", z)):
+        iv, z, mj = cross.get(m), zoombest.get(m), maj5.get(m)
+        cbv = crossbest.get(m) if show_best else None
+        for key, val in (("maj5", mj), ("cross", iv), ("crossbest", cbv), ("zoom", z)):
             if val is not None and b:
                 dlt[key].append(val - b)
                 pct[key].append((val - b) / b * 100)
-        cands = [x for x in (b, mj, iv, z) if x is not None]
+        cands = [x for x in (b, mj, iv, cbv, z) if x is not None]
         best = max(cands) if cands else None
         bcell = f"<b>{b:.2f}</b>" if best is not None and b == best else f"{b:.2f}"
+        bestcell = dcell(cbv, b, cbv is not None and cbv == best) if show_best else ""
         h.append(f"<tr><th class=rowh>{label(m)}</th><td class=c>{bcell}</td>"
                  + dcell(mj, b, mj is not None and mj == best)
                  + dcell(iv, b, iv is not None and iv == best)
+                 + bestcell
                  + dcell(z, b, z is not None and z == best) + "</tr>")
 
     # footer: mean change per column (mean of each model's % change; raw mode also shows mean Δ)
@@ -414,8 +470,55 @@ def render_summary(models, base, maj5, intra, zoomdata, pct_only=False):
         return (f"<td class=c><span style='color:{delta_color(md)}'><b>{md:+.2f}</b></span>"
                 f" <span class=rel>({mp:+.0f}%)</span></td>")
     mb = f"{sum(bases)/len(bases):.2f}" if bases else "–"
+    bestfoot = fcell("crossbest") if show_best else ""
     h.append(f"<tr class=avgrow><th class=rowh>average</th><td class=c>{mb}</td>"
-             + fcell("maj5") + fcell("intra") + fcell("zoom") + "</tr>")
+             + fcell("maj5") + fcell("cross") + bestfoot + fcell("zoom") + "</tr>")
+    h.append("</table>")
+    return "".join(h)
+
+
+FAM_DISPLAY = {"qwen-vl": "Qwen3-VL", "internvl": "InternVL3.5", "gemma": "gemma-4", "llava": "llava-1.5"}
+
+
+def render_best_cross_judges(s51_rows, topn=2):
+    """One row per solver FAMILY. Rank the specific CROSS-family JUDGE MODELS by their AVERAGE realized
+    k=5 gain over the whole solver family, and show the top-N: col 1 = best cross-family judge model,
+    col 2 = 2nd best, ... Each judge model appears in at most one column. Each cell names the judge
+    model, the solver family it judged, and the mean realized gain (Δ + %) across that family's solvers."""
+    # {solver_family: {verifier_model: [(gain, base), ...]}}
+    byfam = {}
+    for r in s51_rows:
+        if r.get("regime") != "cross":
+            continue
+        try:
+            g, b = float(r["realized_gain"]), float(r["base"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        byfam.setdefault(family(r["solver"]), {}).setdefault(r["verifier"], []).append((g, b))
+    if not byfam:
+        return "<p class=note><em>(no cross-family judge data yet for this dataset)</em></p>"
+    ranks = ["best", "2nd best", "3rd best", "4th best", "5th best"]
+    h = ["<table class='mx sum'>",
+         "<tr><th class=rowh>solver family</th>"
+         + "".join(f"<th>{ranks[i]} cross-family<br>judge model (k=5)</th>" for i in range(topn))
+         + "</tr>"]
+    for sf in sorted(byfam, key=lambda f: FAM_ORDER.get(f, 9)):
+        # average realized gain per specific judge model, then rank models
+        agg = []
+        for v, pairs in byfam[sf].items():
+            gm = sum(g for g, _ in pairs) / len(pairs)
+            bm = sum(b for _, b in pairs) / len(pairs)
+            agg.append((gm, bm, v, len(pairs)))
+        agg.sort(key=lambda x: x[0], reverse=True)
+        cells = agg[:topn]
+        famcell = f"<span class=mdl>{LOGO[sf]}<span>{FAM_DISPLAY.get(sf, sf)}</span></span>"
+        h.append(f"<tr><th class=rowh>{famcell}</th>")
+        for gm, bm, v, npair in cells:
+            h.append(f"<td class=c><div>{label(v)}</div>"
+                     f"<div class=rel style='margin:0'>avg over {npair} solver{'s' if npair != 1 else ''}</div>"
+                     f"<span style='color:{delta_color(gm)}'><b>{gm:+.2f}</b></span>{rel_span(gm, bm)}</td>")
+        h += ["<td class=na>–</td>"] * (topn - len(cells))
+        h.append("</tr>")
     h.append("</table>")
     return "".join(h)
 
@@ -639,22 +742,25 @@ def load_all():
     base = {ds: base_with_fallback(ds, grid[ds]) for ds in DS}
     maj5 = {ds: load_maj5(ds) for ds in DS}
     zoom = {ds: load_zoom(ds) for ds in DS}
-    intra = {ds: compute_intra(grid[ds]) for ds in DS}
     s51 = {ds: load_s51(ds) for ds in DS}
+    # summary-table judge column = REALIZED cross-family rejection gain (actual, not predicted acc@k)
+    cross = {ds: compute_realized(s51[ds], "cross", base[ds]) for ds in DS}
+    crossbest = {ds: compute_realized_best(s51[ds], "cross", base[ds]) for ds in DS}
     # the "Average" variant: combine the two datasets cell-by-cell (intersection of shared cells)
     grid["avg"] = avg_grid(grid["countbench"], grid["charxiv"])
     base["avg"] = mean_dict([base["countbench"], base["charxiv"]])
     maj5["avg"] = mean_dict([maj5["countbench"], maj5["charxiv"]])
-    intra["avg"] = mean_dict([intra["countbench"], intra["charxiv"]])
     zoom["avg"] = avg_zoom([zoom["countbench"], zoom["charxiv"]])
     s51["avg"] = avg_s51(s51["countbench"], s51["charxiv"])
-    return dict(grid=grid, base=base, maj5=maj5, zoom=zoom, intra=intra, s51=s51)
+    cross["avg"] = compute_realized(s51["avg"], "cross", base["avg"])
+    crossbest["avg"] = compute_realized_best(s51["avg"], "cross", base["avg"])
+    return dict(grid=grid, base=base, maj5=maj5, zoom=zoom, cross=cross, crossbest=crossbest, s51=s51)
 
 
 def main():
     d = load_all()
-    grid, base, maj5, zoom, intra, s51 = (d["grid"], d["base"], d["maj5"],
-                                          d["zoom"], d["intra"], d["s51"])
+    grid, base, maj5, zoom, cross, crossbest, s51 = (d["grid"], d["base"], d["maj5"],
+                                          d["zoom"], d["cross"], d["crossbest"], d["s51"])
 
     # generate a consistent trio of plots (report-scoped names, so standalone plots aren't clobbered)
     zoom_tbl = {}
@@ -722,13 +828,28 @@ def main():
     P.append("<h2>1 · Per-model summary <span class=note>(test-time compute vs single-shot base)</span></h2>")
     P.append("<p class=note>One row per solver. <b>base acc</b> = single-shot accuracy; "
              "<b>maj@5</b> = majority vote of 5 independent samples; "
-             "<b>avg intra-family judge (k=5)</b> = mean over same-family judges of rejection-sampling "
-             "capped at 5 tries; <b>best zoom</b> = best accuracy across the 2/4/8-crop agentic-vision "
+             "<b>avg cross-family judge (k=5)</b> = mean over different-family judges of the "
+             "<i>realized</i> rejection-sampling accuracy (actual measured gain over base, capped at 5 tries) "
+             "— not the predicted acc@k; <b>best cross-family judge (k=5)</b> = same but taking only each "
+             "solver's single best cross-family judge (oracle judge selection); "
+             "<b>best zoom</b> = best accuracy across the 2/4/8-crop agentic-vision "
              "budgets. Comparison columns show only the Δ vs base — green = gain, red = drop; "
              "<b>bold</b> = best accuracy in the row. Zoom n/a for llava (single-image only) and gemma-4-12B (vLLM bug).</p>")
     for vk in VKEYS:
         P.append(ds_head(vk))
-        P.append(render_summary(models_of(grid[vk]), base[vk], maj5[vk], intra[vk], zoom[vk]))
+        P.append(render_summary(models_of(grid[vk]), base[vk], maj5[vk], cross[vk], zoom[vk],
+                                crossbest=crossbest[vk]))
+
+    # 1b · Best cross-family judges per family
+    P.append("<h2>1b · Best cross-family judge model per solver family <span class=note>(judged by a different family)</span></h2>")
+    P.append("<p class=note>One row per solver family. For each specific cross-family <i>judge model</i> (from a "
+             "different family) we average its <i>realized</i> k=5 rejection gain over all solvers in that family, "
+             "then rank the judge models and show the top two: <b>best</b> cross-family judge model, then "
+             "<b>2nd best</b>. Each judge model appears in at most one column. Each cell = the judge model, the "
+             "number of solvers averaged, and the mean realized gain (Δ vs base, and % lift).</p>")
+    for vk in VKEYS:
+        P.append(ds_head(vk))
+        P.append(render_best_cross_judges(s51[vk], topn=2))
 
     # 2 · Judge gain by regime
     P.append("<h2>2 · Judge gain by regime <span class=note>(the headline)</span></h2>")

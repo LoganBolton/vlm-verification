@@ -19,7 +19,7 @@ def main():
     # Average-across-both-datasets, percent-only summary table (base acc retained as anchor).
     models = R.models_of(d["grid"]["avg"])
     tbl = R.render_summary(models, d["base"]["avg"], d["maj5"]["avg"],
-                           d["intra"]["avg"], d["zoom"]["avg"], pct_only=True)
+                           d["cross"]["avg"], d["zoom"]["avg"], pct_only=True)
 
     html = open(INDEX).read()
     pat = re.compile(r"<table class='mx sum'.*?</table>", re.S)
