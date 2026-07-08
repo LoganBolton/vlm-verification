@@ -223,6 +223,12 @@ By far, the best way to increase accuracy is by using a VLM judge.
     <figcaption class='note figcap'>Each point is one solver-judge pair, averaged across CharXiv and CountBenchQA when both datasets have that pair. Static-grid predicted gain tracks the actual gain from judge-gated rejection sampling well: Pearson r = 0.93.</figcaption>
 </figure>
 
+<h3>Compute Tradeoffs</h3>
+<figure class=plot-wrap>
+    <img src='figures/tradeoff/avg_combined_tradeoff.png' alt='Accuracy versus average inference compute per query for each strategy'>
+    <figcaption class='note figcap'>Accuracy vs. average inference compute per query (GFLOPs, log scale), averaged across CharXiv and CountBenchQA. Each strategy has its own Pareto frontier; faded markers are off-frontier models. Majority vote and the VLM judge buy accuracy for modest extra compute, while the zoom tool lands far to the right — its multi-turn rollouts cost several× more compute for little to no accuracy gain.</figcaption>
+</figure>
+
 <h2>Conclusion</h2>
 
 <p class=note>
