@@ -30,18 +30,17 @@ def name(m):
 
 def collect(ds):
     """model -> list of (compute_gflops, acc) for k=1..min(N,NMAX)."""
+    per_model = T.canonical_cost(ds)      # single-pass cost incl. vision, shared with the other plots
     out = {}
     for f in glob.glob(f"vlm/result/self_consistency/{ds}/*/metrics.json"):
         d = json.load(open(f))
         mk = d.get("maj_at_k") or []
         md = d.get("metadata", {})
-        n = md.get("n_samples") or len(mk)
-        g = md.get("solver_gflops")
-        if not mk or not g or not n:
-            continue
-        per = g / n                       # FLOPs for one sample over the whole dataset
-        kmax = min(len(mk), NMAX)
         m = md.get("solver_model", os.path.basename(os.path.dirname(f)))
+        per = per_model.get(m)            # FLOPs for one sample over the whole dataset (+vision)
+        if not mk or not per:
+            continue
+        kmax = min(len(mk), NMAX)
         out[m] = [((k + 1) * per, mk[k]) for k in range(kmax)]
     return out
 

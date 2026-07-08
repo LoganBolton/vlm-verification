@@ -16,15 +16,26 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 import build_charxiv_report as R
+import vision_flops as VF
+
+# vision-encoder FLOPs (ViT forward pass over image patches) are added on top of the LLM-side
+# solver_gflops. Set VLM_NO_VISION=1 to reproduce the old LLM-only numbers.
+INCLUDE_VISION = os.environ.get("VLM_NO_VISION") != "1"
 
 DATASETS = ["charxiv", "countbench"]
 FIGDIR = "report/figures/tradeoff"
 
 
 def name(m):
-    """full model name with the lab/org prefix stripped (e.g. 'gemma-4-12B-it',
-    'Qwen3-VL-8B-Instruct', 'InternVL3_5-1B', 'llava-1.5-7b-hf')."""
-    return m.split("/", 1)[-1]
+    """full model name, lab/org prefix and the -it/-Instruct suffix stripped
+    (e.g. 'gemma-4-12B', 'Qwen3-VL-8B', 'InternVL3_5-1B', 'llava-1.5-7b-hf')."""
+    n = m.split("/", 1)[-1]
+    for suf in ("-Instruct", "-it"):
+        if n.endswith(suf):
+            n = n[:-len(suf)]
+    if n.startswith("gemma"):          # display as 'Gemma-...'
+        n = "G" + n[1:]
+    return n
 
 
 FAM_COLOR = {"qwen-vl": "#9467bd", "gemma": "#1f77b4", "internvl": "#ff7f0e",
@@ -36,15 +47,24 @@ def fam_color(m):
     return FAM_COLOR.get(R.family(m), FAM_COLOR["other"])
 
 
-def canonical_cost(ds):
-    """One canonical single-pass FLOP cost per model = self-consistency solver_gflops / n_samples.
+def canonical_cost(ds, include_vision=INCLUDE_VISION):
+    """One canonical single-pass FLOP cost per model. LLM side = solver_gflops / n_samples.
+    Vision side = (vit_params * patches * 2 * n_problems) / n_samples, amortized over the samples
+    exactly like the prompt tokens (the image is encoded once per request, reused across samples).
     Same anchor used by the maj@n plot, so 'solo' lines up across both figures. Returns {model: C}."""
+    vcache = VF.load_cache() if include_vision else {}
     C = {}
     for f in glob.glob(f"vlm/result/self_consistency/{ds}/*/metrics.json"):
         d = json.load(open(f)); md = d.get("metadata", {})
         g, n = md.get("solver_gflops"), md.get("n_samples")
-        if g and n:
-            C[md["solver_model"]] = g / n
+        if not (g and n):
+            continue
+        c = g / n
+        if include_vision:
+            vt = VF.vision_gflops_total(md["solver_model"], ds, md.get("n_problems"), vcache)
+            if vt:
+                c += vt / n
+        C[md["solver_model"]] = c
     return C
 
 

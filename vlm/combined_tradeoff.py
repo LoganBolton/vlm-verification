@@ -11,7 +11,7 @@ The three are joined per model; the red line is the Pareto frontier over everyth
 Writes report/figures/tradeoff/{ds}_combined_tradeoff.png (+ an 'avg'). Run:
   .venv/bin/python vlm/combined_tradeoff.py
 """
-import os, sys
+import os, sys, json, glob
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -27,11 +27,22 @@ FIGDIR = "report/figures/tradeoff"
 name = T.name
 
 
+def n_queries(ds):
+    """number of problems (queries) in the dataset, from any run's metadata."""
+    for f in glob.glob(f"vlm/result/self_consistency/{ds}/*/metrics.json"):
+        md = json.load(open(f)).get("metadata", {})
+        if md.get("n_problems"):
+            return md["n_problems"]
+    return None
+
+
 def collect(ds):
-    """model -> dict(base=(g,a), maj5=(g,a) or None, judge=(g,a) or None)."""
+    """model -> dict(base=(g,a), maj5=(g,a) or None, judge=(g,a) or None).
+    Compute is normalized to per-query GFLOPs (whole-dataset GFLOPs / n_problems)."""
     _, pipes = T.collect(ds)                 # canonical-priced judge pipelines
     best = T.best_judge(pipes)               # solver -> (gflops, acc, verifier)
     maj = MJ.collect(ds)                      # model -> [(compute, acc), ...] k=1..N
+    nq = n_queries(ds) or 1                   # -> per-query average compute
     out = {}
     for m, curve in maj.items():
         base = curve[0]                      # (C[m], maj@1)
@@ -39,23 +50,26 @@ def collect(ds):
         rec = dict(base=base, maj5=maj5, judge=None)
         if m in best:
             rec["judge"] = (best[m][0], best[m][1])
+        for k, v in rec.items():             # whole-dataset GFLOPs -> per-query
+            if v is not None:
+                rec[k] = (v[0] / nq, v[1])
         out[m] = rec
     return out
 
 
 STRAT = [   # key,     marker, size, frontier color, style, legend label
-    # frontier lines kept neutral (dark grey) & distinguished by dash style, so they don't
-    # clash with the fixed family colors (Qwen purple / gemma blue / InternVL orange / llava red)
-    ("base",  "o", 95, "0.15", "-",  "base solo (1 pass)"),
-    ("maj5",  "s", 70, "0.15", "--", "maj@5 vote"),
-    ("judge", "D", 60, "0.15", "-.", "+ best judge (k=5)"),
+    # each strategy's Pareto frontier gets its own line color. These are deliberately chosen to
+    # avoid the family marker palette (Qwen purple / gemma blue / InternVL orange / llava red /
+    # grey) -- black, green, magenta don't collide with any of them. Dash style is kept too.
+    ("base",  "o", 95, "#000000", "-",  "base solo (1 pass)"),
+    ("maj5",  "s", 70, "#2ca02c", "--", "maj@5 vote"),
+    ("judge", "D", 60, "#e377c2", "-.", "+ best judge (k=5)"),
 ]
 FADED, FULL = 0.25, 1.0
 
 
 def render(ds, data, title=None):
     fig, ax = plt.subplots(figsize=(8.5, 5.8))
-    cmap = plt.get_cmap("tab10")
     order = sorted(data, key=lambda m: (R.FAM_ORDER.get(R.family(m), 4), R.size(m)))
 
     # which models sit on each strategy's Pareto frontier
@@ -73,11 +87,10 @@ def render(ds, data, title=None):
                 continue
             on = m in onfr
             ax.scatter(v[0], v[1], s=sz, marker=mk, alpha=FULL if on else FADED,
-                       zorder=5 if on else 3,
-                       color=cmap(R.FAM_ORDER.get(R.family(m), 4)),
+                       zorder=5 if on else 3, color=T.fam_color(m),
                        edgecolor="k" if on else "none")
             if on:                        # label only the models on this frontier
-                ax.annotate(name(m), v, fontsize=7, xytext=(4, 3),
+                ax.annotate(name(m), v, fontsize=7, xytext=(6, 0), va="center",
                             textcoords="offset points", zorder=6)
 
     # draw the three frontier lines
@@ -88,7 +101,7 @@ def render(ds, data, title=None):
         handles.append(Line2D([], [], marker=mk, color=col, ls=ls, mec="k", ms=8, lw=2.2, label=lab))
     ax.legend(handles=handles, fontsize=8, loc="lower right", title="Pareto frontier per strategy")
     ax.set_xscale("log")
-    ax.set_xlabel("total inference compute  (GFLOPs, whole dataset, log scale)")
+    ax.set_xlabel("Avg Inference Compute Per Query (GFLOPs, log scale)")
     ax.set_ylabel("accuracy")
     ax.set_title(title or f"Compute vs accuracy — base vs maj@5 vs judge — {ds}")
     ax.grid(alpha=0.3, which="both")
