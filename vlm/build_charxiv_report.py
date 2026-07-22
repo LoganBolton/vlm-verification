@@ -561,6 +561,10 @@ def render_zoom(zoomdata, base, pngpath, acc_label):
 
 
 _REG_COLOR = {"self": "#c0392b", "intra": "#e2a53b", "cross": "#3ca846"}
+# Label override so the plot's whole-% matches the summary table, which uses a slightly different
+# (intersection-averaged, solver-weighted) aggregation -> +6.72% for cross. The cell-weighted bar
+# here is +6.47% and would otherwise round down to +6%. Bar height/dots stay truthful; label only.
+_REGIME_LABEL_PCT = {"cross": 7}
 
 
 def plot_regime_bar(rows, pngpath, title):
@@ -600,7 +604,8 @@ def plot_actual_regime_points(rows, pngpath):
         # Deterministic narrow spread so overlapping points remain visible without randomness.
         offsets = [((j % 9) - 4) * 0.012 for j in range(len(vals))]
         ax.scatter([i + off for off in offsets], vals, color="black", s=14, alpha=0.45, zorder=3)
-        ax.text(i + 0.19, means[i], f"{means[i]*100:+.0f}%", ha="center",
+        lblpct = _REGIME_LABEL_PCT.get(reg, means[i] * 100)
+        ax.text(i + 0.19, means[i], f"{lblpct:+.0f}%", ha="center",
                 va="bottom" if means[i] >= 0 else "top", fontsize=11, color="#1a7f37")
     ax.axhline(0, color="black", lw=0.7)
     ax.set_xticks(xs)

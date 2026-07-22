@@ -103,6 +103,35 @@ STRAT = [   # key,     marker, size, frontier color, style, legend label
 ]
 FADED, FULL = 0.18, 1.0
 
+# Collapse redundant, near-coincident per-model labels: for these models several strategy points
+# land almost on top of each other, so we keep only ONE label (the first on-frontier strategy in
+# STRAT order). Maps a model-id substring -> the set of strategy keys that should share one label.
+COLLAPSE = {
+    "gemma-4-E2B": {"maj5", "zoom"},           # zoom + maj@5 sit together -> single label
+    "gemma-4-12B": {"maj5", "judge", "zoom"},  # zoom + judge + maj@5 sit together -> single label
+}
+
+# (strategy, model-substring) label to suppress: the marker/frontier point stays, just no text.
+OMIT_LABELS = [("judge", "Qwen3-VL-4B")]       # declutter the crowded best-judge region
+
+# (strategy, model-substring) -> which side of the marker the label sits on ("left"/"right"),
+# overriding the defaults (judge -> left, everything else -> right of the point).
+LABEL_SIDE = {
+    ("judge", "gemma-4-E2B"): "right",
+    ("zoom",  "gemma-4-E4B"): "left",
+    ("maj5",  "Qwen3-VL-2B"): "left",
+}
+# (strategy, model-substring) -> (side, gap-factor): PIN the label at a fixed close offset on that
+# side of the marker and keep it out of adjust_text, so it stays put instead of drifting far away.
+# gap-factor is the log-x divisor/multiplier -> smaller = closer to the marker.
+LABEL_PIN = {
+    ("judge", "Qwen3-VL-2B"): ("left", 1.06),
+}
+# extra vertical nudge (accuracy units, +up/-down) for specific labels, applied after side placement.
+LABEL_DY = {
+    ("zoom", "gemma-4-E4B"): -0.045,    # move down, staying left
+}
+
 
 def render(ds, data, title=None):
     fig, ax = plt.subplots(figsize=(10, 6.5))
@@ -118,6 +147,8 @@ def render(ds, data, title=None):
     # collect all marker coords (to repel labels away from every point) and the on-frontier
     # label texts (placed non-overlappingly by adjust_text at the end).
     pxs, pys, texts, txs, tys = [], [], [], [], []   # txs/tys = the marker each label anchors to
+    leader = []                          # (text, [points]) -> thin leader line(s) drawn at the end
+    collapse_pts = {}                    # collapsed model -> its near-coincident points (one shared label)
     for key, mk, sz, *_ in STRAT:
         onfr = set(frontier[key])
         for m in order:
@@ -130,14 +161,55 @@ def render(ds, data, title=None):
                        edgecolor="k" if on else "none")
             pxs.append(v[0]); pys.append(v[1])
             if on:                        # label only the models on this frontier
+                # collapsed models: stash each near-coincident point; one shared label is built
+                # after the loop at the centroid, with a leader line fanning out to every point.
+                rule = next((keys for sub, keys in COLLAPSE.items() if sub in m), None)
+                if rule is not None and key in rule:
+                    collapse_pts.setdefault(m, []).append((v[0], v[1]))
+                    continue
+                # base labels are PINNED to the left of the far-left frontier line (kept out of
+                # adjust_text, which otherwise bounces the edge ones back to the right). gemma-4-E2B
+                # sits at the very left edge with no room, so it goes just BELOW its marker instead.
+                if key == "base":
+                    if "gemma-4-E2B" in m:
+                        txt = ax.text(v[0], v[1] - 0.03, name(m), fontsize=7,
+                                      ha="center", va="top", zorder=6)
+                    else:
+                        txt = ax.text(v[0] / 1.18, v[1], name(m), fontsize=7,
+                                      ha="right", va="center", zorder=6)
+                    leader.append((txt, [(v[0], v[1])]))
+                    continue
+                # suppress specific labels (marker stays) to declutter crowded frontiers.
+                if any(key == k and sub in m for k, sub in OMIT_LABELS):
+                    continue
+                # pinned labels: fixed close offset, kept out of adjust_text so they don't drift.
+                pin = next(((side, fac) for (k, sub), (side, fac) in LABEL_PIN.items()
+                            if key == k and sub in m), None)
+                if pin is not None:
+                    side, fac = pin
+                    x = v[0] / fac if side == "left" else v[0] * fac
+                    txt = ax.text(x, v[1], name(m), fontsize=7,
+                                  ha="right" if side == "left" else "left", va="center", zorder=6)
+                    leader.append((txt, [(v[0], v[1])]))
+                    pxs.append(x); pys.append(v[1])
+                    continue
                 # judge labels start on the LEFT of their marker (that side is less crowded);
                 # adjust_text refines from there, leader lines re-anchored to the marker below.
-                if key == "judge":
-                    txt = ax.text(v[0] / 1.15, v[1], name(m), fontsize=7,
+                override = next((s for (k, sub), s in LABEL_SIDE.items() if key == k and sub in m), None)
+                dy = next((d for (k, sub), d in LABEL_DY.items() if key == k and sub in m), 0.0)
+                if override == "right":
+                    txt = ax.text(v[0] * 1.15, v[1] + dy, name(m), fontsize=7,
+                                  ha="left", va="center", zorder=6)
+                elif override == "left":
+                    txt = ax.text(v[0] / 1.15, v[1] + dy, name(m), fontsize=7,
+                                  ha="right", va="center", zorder=6)
+                elif key == "judge":
+                    txt = ax.text(v[0] / 1.15, v[1] + dy, name(m), fontsize=7,
                                   ha="right", va="center", zorder=6)
                 else:
-                    txt = ax.text(v[0], v[1], name(m), fontsize=7, zorder=6)
+                    txt = ax.text(v[0], v[1] + dy, name(m), fontsize=7, zorder=6)
                 texts.append(txt); txs.append(v[0]); tys.append(v[1])
+                leader.append((txt, [(v[0], v[1])]))
 
     # draw the frontier lines, and densify each into points so the labels treat the LINES as
     # obstacles too (not just the markers) -- sampled in log-x space to match the axis.
@@ -158,13 +230,43 @@ def render(ds, data, title=None):
     ax.set_title(title or "Compute vs Accuracy Tradeoff Across Strategies")
     ax.grid(alpha=0.3, which="both")
 
-    # nudge the labels apart so nothing overlaps the markers or each other; thin leader lines
-    # connect a moved label back to its point.
+    # one merged label per collapsed model: since its points are near-coincident there's no room
+    # for adjust_text to repel a centered label off them, so place it deterministically just BELOW
+    # the cluster -- horizontally at the centroid (mean in log-x, x being log-scaled), vertically a
+    # fixed gap under the lowest point -- then fan a leader line up to each shape. It's registered
+    # as an obstacle (pxs/pys) so the other, adjust_text-managed labels steer around it.
+    for m, pts in collapse_pts.items():
+        if "gemma-4-12B" in m:                       # this cluster sits at the top -> label to its RIGHT
+            xlab = 10 ** (max(np.log10(p[0]) for p in pts)) * 1.15
+            ylab = sum(p[1] for p in pts) / len(pts)
+            txt = ax.text(xlab, ylab, name(m), fontsize=7, ha="left", va="center", zorder=6)
+        else:                                        # default: just below the cluster
+            xlab = 10 ** (sum(np.log10(p[0]) for p in pts) / len(pts))
+            ylab = min(p[1] for p in pts) - 0.03
+            txt = ax.text(xlab, ylab, name(m), fontsize=7, ha="center", va="top", zorder=6)
+        leader.append((txt, pts))
+        pxs.append(xlab); pys.append(ylab)
+
+    # nudge the labels apart so nothing overlaps the markers or each other (positioning only).
     if adjust_text and texts:
         adjust_text(texts, x=pxs, y=pys, target_x=txs, target_y=tys, ax=ax,
-                    expand=(1.3, 1.5), force_text=(0.4, 0.6), force_static=(0.2, 0.3),
-                    arrowprops=dict(arrowstyle="-", color="0.5", lw=0.5))
+                    expand=(1.3, 1.5), force_text=(0.4, 0.6), force_static=(0.2, 0.3))
+    # thin leader lines: connect each label to its point(s). Anchor the line at the spot on the
+    # label's bounding box CLOSEST to the marker (a corner/edge of the word) instead of the text
+    # center, so it stops next to the word. Measured after layout is final -> valid bboxes.
     fig.tight_layout()
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    inv = ax.transData.inverted()
+    for txt, pts in leader:
+        bb = txt.get_window_extent(rend)                 # label rect in display (pixel) coords
+        for px, py in pts:
+            dx, dy = ax.transData.transform((px, py))    # marker in display coords
+            cx = min(max(dx, bb.x0), bb.x1)              # nearest point on the label rect...
+            cy = min(max(dy, bb.y0), bb.y1)              # ...to the marker (corner or edge)
+            ex, ey = inv.transform((cx, cy))             # back to data coords
+            ax.annotate("", xy=(px, py), xytext=(ex, ey), zorder=3,
+                        arrowprops=dict(arrowstyle="-", color="0.5", lw=0.5, shrinkA=2, shrinkB=4))
     out = f"{FIGDIR}/{ds}_combined_tradeoff.png"
     fig.savefig(out, dpi=130); plt.close(fig)
     return out

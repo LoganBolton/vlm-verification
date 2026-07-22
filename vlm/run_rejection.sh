@@ -19,6 +19,25 @@ STATUS="$LOGDIR/STATUS_rejection.txt"
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
 log_status() { echo "[$(ts)] $*" | tee -a "$STATUS"; }
 
+wait_gpus_free() {
+  # Per-cell guard: before launching a cell, sweep any ORPHANED vLLM workers/engines
+  # (none should exist between cells, since the queue is sequential) and wait until
+  # BOTH GPUs are actually free. A leftover worker squatting on GPU memory starves
+  # TP=2 solvers (InternVL3_5-14B, llava-1.5-13b) at engine init -- they need ~21 GiB
+  # free/GPU at 0.9 util, and fail instantly with a "Free memory ... less than desired"
+  # ValueError, burning a whole sweep pass without progress.
+  local tries=${1:-60} maxused=99999
+  if ! pgrep -f "rejection_sampling.py" >/dev/null 2>&1; then
+    pkill -9 -f "VLLM::Worker" 2>/dev/null; pkill -9 -f "VLLM::EngineCore" 2>/dev/null; sleep 5
+  fi
+  for _ in $(seq 1 "$tries"); do
+    maxused=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | sort -nr | head -1)
+    [[ "${maxused:-99999}" -lt 1500 ]] && return 0
+    sleep 10
+  done
+  log_status "WARN   GPUs still busy after wait (maxused=${maxused:-?} MiB) -- launching anyway"
+}
+
 # ---- wait for any scale pipeline + GPUs to free up ----
 log_status "waiting for GPUs (scale pipeline still running?)"
 while pgrep -f "run_scale_pipeline.sh" >/dev/null 2>&1; do sleep 60; done
@@ -128,6 +147,7 @@ for entry in "${RUNS[@]}"; do
   fi
   mkdir -p "$OUT"
   LOGF="$LOGDIR/reject_${DS}_${SS}__${VS}.log"
+  wait_gpus_free            # ensure both GPUs are free so TP=2 solvers don't fail at init
   log_status "START  $DS solver=$SS verifier=$VS"
   if $PY vlm/rejection_sampling.py \
       --solver_model_name "$SOLVER" $(extra_for solver "$SOLVER") \

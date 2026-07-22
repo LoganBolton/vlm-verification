@@ -15,6 +15,8 @@ Idempotent-ish: re-running rebuilds from disk and re-pushes.
 import json
 import glob
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
 from datasets import Dataset, Features, Value, Image, Sequence
@@ -281,17 +283,30 @@ def build_images_dataset():
 
 def main():
     private = os.environ.get("HF_PRIVATE", "1") != "0"
-    print(f"Building logs dataset -> {REPO} (private={private})")
+    # which configs to (re)push; images are large & rarely change, so allow skipping
+    configs = {c.strip() for c in os.environ.get("HF_CONFIGS", "logs,images").split(",") if c.strip()}
+    print(f"Building dataset -> {REPO} (private={private}, configs={sorted(configs)})")
 
-    logs = Dataset.from_generator(row_generator, features=LOGS_FEATURES)
-    print(f"  logs rows: {len(logs):,}")
-    logs.push_to_hub(REPO, config_name="logs", private=private)
-    print("  pushed logs config")
+    if "logs" in configs:
+        # from_generator fingerprints the generator's *code*, not the files it reads,
+        # so it will silently reuse a stale build after new result files land. Force a
+        # throwaway cache dir every run so we always rebuild from current disk.
+        tmp_cache = tempfile.mkdtemp(prefix="vlm_export_")
+        try:
+            logs = Dataset.from_generator(
+                row_generator, features=LOGS_FEATURES, cache_dir=tmp_cache
+            )
+            print(f"  logs rows: {len(logs):,}")
+            logs.push_to_hub(REPO, config_name="logs", private=private)
+            print("  pushed logs config")
+        finally:
+            shutil.rmtree(tmp_cache, ignore_errors=True)
 
-    images = build_images_dataset()
-    print(f"  images rows: {len(images):,}")
-    images.push_to_hub(REPO, config_name="images", private=private)
-    print("  pushed images config")
+    if "images" in configs:
+        images = build_images_dataset()
+        print(f"  images rows: {len(images):,}")
+        images.push_to_hub(REPO, config_name="images", private=private)
+        print("  pushed images config")
 
 
 if __name__ == "__main__":
