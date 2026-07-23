@@ -133,7 +133,7 @@ LABEL_DY = {
 }
 
 
-def render(ds, data, title=None):
+def render(ds, data, title=None, ymin=None):
     fig, ax = plt.subplots(figsize=(10, 6.5))
     order = sorted(data, key=lambda m: (R.FAM_ORDER.get(R.family(m), 4), R.size(m)))
 
@@ -172,10 +172,10 @@ def render(ds, data, title=None):
                 # sits at the very left edge with no room, so it goes just BELOW its marker instead.
                 if key == "base":
                     if "gemma-4-E2B" in m:
-                        txt = ax.text(v[0], v[1] - 0.03, name(m), fontsize=7,
+                        txt = ax.text(v[0], v[1] - 0.03, name(m), fontsize=10,
                                       ha="center", va="top", zorder=6)
                     else:
-                        txt = ax.text(v[0] / 1.18, v[1], name(m), fontsize=7,
+                        txt = ax.text(v[0] / 1.18, v[1], name(m), fontsize=10,
                                       ha="right", va="center", zorder=6)
                     leader.append((txt, [(v[0], v[1])]))
                     continue
@@ -188,7 +188,7 @@ def render(ds, data, title=None):
                 if pin is not None:
                     side, fac = pin
                     x = v[0] / fac if side == "left" else v[0] * fac
-                    txt = ax.text(x, v[1], name(m), fontsize=7,
+                    txt = ax.text(x, v[1], name(m), fontsize=10,
                                   ha="right" if side == "left" else "left", va="center", zorder=6)
                     leader.append((txt, [(v[0], v[1])]))
                     pxs.append(x); pys.append(v[1])
@@ -198,16 +198,16 @@ def render(ds, data, title=None):
                 override = next((s for (k, sub), s in LABEL_SIDE.items() if key == k and sub in m), None)
                 dy = next((d for (k, sub), d in LABEL_DY.items() if key == k and sub in m), 0.0)
                 if override == "right":
-                    txt = ax.text(v[0] * 1.15, v[1] + dy, name(m), fontsize=7,
+                    txt = ax.text(v[0] * 1.15, v[1] + dy, name(m), fontsize=10,
                                   ha="left", va="center", zorder=6)
                 elif override == "left":
-                    txt = ax.text(v[0] / 1.15, v[1] + dy, name(m), fontsize=7,
+                    txt = ax.text(v[0] / 1.15, v[1] + dy, name(m), fontsize=10,
                                   ha="right", va="center", zorder=6)
                 elif key == "judge":
-                    txt = ax.text(v[0] / 1.15, v[1] + dy, name(m), fontsize=7,
+                    txt = ax.text(v[0] / 1.15, v[1] + dy, name(m), fontsize=10,
                                   ha="right", va="center", zorder=6)
                 else:
-                    txt = ax.text(v[0], v[1] + dy, name(m), fontsize=7, zorder=6)
+                    txt = ax.text(v[0], v[1] + dy, name(m), fontsize=10, zorder=6)
                 texts.append(txt); txs.append(v[0]); tys.append(v[1])
                 leader.append((txt, [(v[0], v[1])]))
 
@@ -229,6 +229,9 @@ def render(ds, data, title=None):
     ax.set_ylabel("accuracy")
     ax.set_title(title or "Compute vs Accuracy Tradeoff Across Strategies")
     ax.grid(alpha=0.3, which="both")
+    ax.set_xlim(right=1.1e5)         # cut the x-axis off around 10^5 (all frontier points sit well left)
+    if ymin is not None:
+        ax.set_ylim(bottom=ymin)
 
     # one merged label per collapsed model: since its points are near-coincident there's no room
     # for adjust_text to repel a centered label off them, so place it deterministically just BELOW
@@ -238,12 +241,12 @@ def render(ds, data, title=None):
     for m, pts in collapse_pts.items():
         if "gemma-4-12B" in m:                       # this cluster sits at the top -> label to its RIGHT
             xlab = 10 ** (max(np.log10(p[0]) for p in pts)) * 1.15
-            ylab = sum(p[1] for p in pts) / len(pts)
-            txt = ax.text(xlab, ylab, name(m), fontsize=7, ha="left", va="center", zorder=6)
+            ylab = sum(p[1] for p in pts) / len(pts) + 0.012   # nudged up a bit
+            txt = ax.text(xlab, ylab, name(m), fontsize=10, ha="left", va="center", zorder=6)
         else:                                        # default: just below the cluster
             xlab = 10 ** (sum(np.log10(p[0]) for p in pts) / len(pts))
             ylab = min(p[1] for p in pts) - 0.03
-            txt = ax.text(xlab, ylab, name(m), fontsize=7, ha="center", va="top", zorder=6)
+            txt = ax.text(xlab, ylab, name(m), fontsize=10, ha="center", va="top", zorder=6)
         leader.append((txt, pts))
         pxs.append(xlab); pys.append(ylab)
 
@@ -299,7 +302,7 @@ def main():
         print(f"  -> wrote {render(ds, data)}")
     if len(per_ds) == len(DATASETS):
         avg = average(per_ds)
-        out = render("avg", avg, title="Compute vs Accuracy Tradeoff Across Strategies")
+        out = render("avg", avg, title="Compute vs Accuracy Tradeoff Across Strategies", ymin=0.35)
         print(f"  -> wrote {out}")
 
 
