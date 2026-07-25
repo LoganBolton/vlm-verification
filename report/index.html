@@ -6,7 +6,7 @@
     .note{color:#666;font-size:.86rem;margin:.2rem 0 .6rem}
     table.mx{border-collapse:collapse;font-size:.8rem;margin:.5rem 0}
     table.mx td,table.mx th{border:1px solid #ccc;padding:3px 7px;text-align:center}
-    table.mx th{background:#f4f6f8} .mx td.c{font-variant-numeric:tabular-nums lining-nums;font-family:'Times New Roman','Liberation Serif','DejaVu Serif',serif}
+    table.mx th{background:#f4f6f8} .mx td.c{font-variant-numeric:tabular-nums lining-nums;font-family:'Times New Roman','Liberation Serif','DejaVu Serif',serif;font-size:.86rem;line-height:1}
     .mx td.diag{outline:2px solid #2c3e50;outline-offset:-2px;font-weight:600}
     .mx td.na{color:#c8ccd0;font-style:italic;font-size:.82em} .corner,.rowh{text-align:right!important;background:#f4f6f8;font-weight:600}
     /* org logos: sized to the text so they never alter line height/width */
@@ -41,6 +41,7 @@
     .footnotes .mark{font-size:1.6rem;color:#2c3e50;text-align:center;line-height:1;margin-bottom:.7rem}
     .footnotes ol{margin:.3rem 0 0;padding-left:1.3rem}
     .footnotes li{font-size:.86rem;color:#666;margin:.3rem 0}
+    .cite a{text-decoration:none;color:#2c3e50;font-weight:600} .cite a:hover{text-decoration:underline}
     .site-footer{border-top:1px solid #ddd;margin-top:3rem;padding:2rem 0 1rem;text-align:center;color:#555}
     .site-footer .mark{font-size:1.6rem;color:#2c3e50;line-height:1}
     .contact-links{display:flex;gap:1.6rem;justify-content:center;flex-wrap:wrap;margin-top:.9rem}
@@ -99,11 +100,7 @@ div:has(> img[src$="methods.svg"]) img{width:100%;height:auto}
 <!-- qwen3-vl-8b-instruct official: $0.18 input / $0.7 output -->
  <!-- gemini-3.1-pro: $2 input / $12 output -->
 
- <!-- I want to inclued this as a list of reference after unreliable. i want the citation style where it's just numbers and not the full paper. so like ([1,2]) with clickable links -->
- <!-- https://arxiv.org/abs/2407.06581 -->
-<!-- https://arxiv.org/abs/2505.23941 -->
-
-<p class=note>Vision language models (VLMs) are expensive. Open-source VLMs like Qwen are easy to to run for free on consumer hardware, but at the same time are notoriously unreliable.</p>
+<p class=note>Vision language models (VLMs) are expensive. Open-source VLMs like Qwen are easy to to run for free on consumer hardware, but at the same time are <a href="https://arxiv.org/abs/2407.06581">notoriously unreliable</a>.</p>
 
 <p class=note>What's the best way to boost the accuracy of open-source vision language models? Average the outputs over multiple calls? Use another VLM judge to verify the output of the original model? Give the model a zoom tool to better inspect the image? 
     
@@ -111,7 +108,6 @@ div:has(> img[src$="methods.svg"]) img{width:100%;height:auto}
 To find out, <b>I ran 13 open-source VLMs for over 500 GPU hours</b> with different test-time compute methods.
 
 <br>
-<!-- make this look cooler as a css element. some different color background to make it stand out. still want it subtle though, not like insanely eye catching -->
 <p><i>TLDR: the best way to boost a VLM's accuracy is by using another VLM from a different model family to judge the original model's answers, but you're better off just using the biggest VLM you can fit on your GPU.</i></p>
 
 <!-- <br><br> -->
@@ -129,7 +125,7 @@ So that leaves us with open source, local models. In particular, I'm most intere
 <p class=note>I tested models across 4 different families: <svg viewBox='0 0 48 48' class='lg' aria-label='Google'><path fill='#4285F4' d='M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z'/><path fill='#34A853' d='M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z'/><path fill='#FBBC05' d='M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z'/><path fill='#EA4335' d='M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2C15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z'/></svg> Gemma at E2B, E4B and 12B, <span class='lgbg lg-qwen' title='Qwen'></span> Qwen3-VL at 2B, 4B and 8B, <span class='lgbg lg-gv' title='InternVL (InternLM)'></span> InternVL3.5 at 1B, 2B, 4B, 8B and 14B, <span class='lgbg lg-llava' title='LLaVA'></span> LLaVA-1.5 at 7B and 13B. Each model was run locally through vLLM on a single RTX 3090.</p>
 
 <h3>Benchmarks</h3>
-<p class=note>To test both simple perception and visual reasoning, I evaluated every model on both Charxiv and CountBenchQA. <a href='https://huggingface.co/datasets/princeton-nlp/CharXiv'>CharXiv</a> is a popular benchmark that tests the model's ability to logically interpret real-world scientific figures. <a href='https://huggingface.co/datasets/vikhyatk/CountBenchQA'>CountBenchQA</a> is a simple dataset where the model has to count the number of objects in an image. Despite the simplicity of the questions, smaller VLMs can <a href='https://vlmsareblind.github.io/'>surprisingly struggle</a> at counting everyday objects.</p>
+<p class=note>To test both simple perception and visual reasoning, I evaluated every model on both Charxiv and CountBenchQA. <a href='https://huggingface.co/datasets/princeton-nlp/CharXiv'>CharXiv</a> is a popular benchmark that tests the model's ability to logically interpret real-world scientific figures. <a href='https://huggingface.co/datasets/vikhyatk/CountBenchQA'>CountBenchQA</a> is a simple dataset where the model has to count the number of objects in an image. Despite the simplicity of the questions, smaller VLMs can <a href='https://arxiv.org/pdf/2604.10039'>surprisingly struggle</a> at counting everyday objects.</p>
 
 <div class=example-grid>
     <figure>
@@ -163,8 +159,8 @@ So that leaves us with open source, local models. In particular, I'm most intere
 <div style='text-align:center;margin:1rem 4rem'><img src='figures/methods.svg'></div>
 
 <h2>Results</h2>
-<!-- add small caption here that says this is relatively increase in accuracy from base accuracy and that its averaged across both datasets. short caption, to the point. -->
 <div class=table-wrap><table class='mx sum'><tr><th class=rowh>Solver Model</th><th>Base<br>Acc</th><th>Zoom<br>Tool</th><th>Avg Cross<br>Family judge</th><th>Maj@5</th></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-qwen' title='Qwen'></span><span>Qwen3-VL-2B-Instruct</span></span></th><td class=c>0.54</td><td class=c><span style='color:#1a7f37'>+4%</span></td><td class=c><span style='color:#1a7f37'>+5%</span></td><td class=c><span style='color:#1a7f37'><b>+9%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-qwen' title='Qwen'></span><span>Qwen3-VL-4B-Instruct</span></span></th><td class=c>0.63</td><td class=c><span style='color:#c0392b'>-4%</span></td><td class=c><span style='color:#1a7f37'>+2%</span></td><td class=c><span style='color:#1a7f37'><b>+6%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-qwen' title='Qwen'></span><span>Qwen3-VL-8B-Instruct</span></span></th><td class=c>0.65</td><td class=c><span style='color:#c0392b'>-4%</span></td><td class=c><span style='color:#1a7f37'>+2%</span></td><td class=c><span style='color:#1a7f37'><b>+4%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-gv' title='InternVL (InternLM)'></span><span>InternVL3.5-1B</span></span></th><td class=c>0.42</td><td class=c><span style='color:#c0392b'>-8%</span></td><td class=c><span style='color:#1a7f37'>+9%</span></td><td class=c><span style='color:#1a7f37'><b>+11%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-gv' title='InternVL (InternLM)'></span><span>InternVL3.5-2B</span></span></th><td class=c>0.52</td><td class=c><span style='color:#1a7f37'>+3%</span></td><td class=c><span style='color:#1a7f37'>+5%</span></td><td class=c><span style='color:#1a7f37'><b>+10%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-gv' title='InternVL (InternLM)'></span><span>InternVL3.5-4B</span></span></th><td class=c>0.61</td><td class=c><span style='color:#c0392b'>-5%</span></td><td class=c><span style='color:#1a7f37'>+3%</span></td><td class=c><span style='color:#1a7f37'><b>+4%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-gv' title='InternVL (InternLM)'></span><span>InternVL3.5-8B</span></span></th><td class=c>0.63</td><td class=c><span style='color:#c0392b'>-31%</span></td><td class=c><span style='color:#1a7f37'><b>+2%</b></span></td><td class=c><span style='color:#1a7f37'>+1%</span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-gv' title='InternVL (InternLM)'></span><span>InternVL3.5-14B</span></span></th><td class=c>0.64</td><td class=c><span style='color:#c0392b'>-1%</span></td><td class=c><span style='color:#1a7f37'>+2%</span></td><td class=c><span style='color:#1a7f37'><b>+4%</b></span></td></tr><tr><th class=rowh><span class=mdl><svg viewBox='0 0 48 48' class='lg' aria-label='Google'><path fill='#4285F4' d='M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z'/><path fill='#34A853' d='M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z'/><path fill='#FBBC05' d='M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z'/><path fill='#EA4335' d='M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2C15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z'/></svg><span>gemma-4-E2B-it</span></span></th><td class=c>0.44</td><td class=c><span style='color:#1a7f37'>+8%</span></td><td class=c><span style='color:#1a7f37'>+5%</span></td><td class=c><span style='color:#1a7f37'><b>+8%</b></span></td></tr><tr><th class=rowh><span class=mdl><svg viewBox='0 0 48 48' class='lg' aria-label='Google'><path fill='#4285F4' d='M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z'/><path fill='#34A853' d='M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z'/><path fill='#FBBC05' d='M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z'/><path fill='#EA4335' d='M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2C15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z'/></svg><span>gemma-4-E4B-it</span></span></th><td class=c>0.54</td><td class=c><span style='color:#1a7f37'>+4%</span></td><td class=c><span style='color:#1a7f37'>+2%</span></td><td class=c><span style='color:#1a7f37'><b>+5%</b></span></td></tr><tr><th class=rowh><span class=mdl><svg viewBox='0 0 48 48' class='lg' aria-label='Google'><path fill='#4285F4' d='M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z'/><path fill='#34A853' d='M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z'/><path fill='#FBBC05' d='M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z'/><path fill='#EA4335' d='M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2C15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z'/></svg><span>gemma-4-12B-it</span></span></th><td class=c>0.77</td><td class=c><span style='color:#1a7f37'>+1%</span></td><td class=c><span style='color:#1a7f37'>+0%</span></td><td class=c><span style='color:#1a7f37'><b>+1%</b></span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-llava' title='LLaVA'></span><span>llava-1.5-7b-hf</span></span></th><td class=c>0.25</td><td class=na>NA</td><td class=c><span style='color:#1a7f37'><b>+26%</b></span></td><td class=c><span style='color:#1a7f37'>+6%</span></td></tr><tr><th class=rowh><span class=mdl><span class='lgbg lg-llava' title='LLaVA'></span><span>llava-1.5-13b-hf</span></span></th><td class=c>0.27</td><td class=na>NA</td><td class=c><span style='color:#1a7f37'><b>+26%</b></span></td><td class=c><span style='color:#1a7f37'>+12%</span></td></tr><tr class=avgrow><th class=rowh>average</th><td class=c>0.53 &plusmn; 0.2</td><td class=c>-3 &plusmn; 10.4%</td><td class=c>+7 &plusmn; 8.8%</td><td class=c>+6 &plusmn; 3.6%</td></tr></table></div>
+<p class='note figcap' style='text-align:center;margin:.2rem auto .7rem'>Relative change in accuracy over the base model, averaged across CharXiv and CountBenchQA.</p>
 <!-- <h4><i>Baseline - Raw Accuracy</i></h4>
 <p class=note>In general across model sizes, Gemma is the best with Qwen and InternVL closely behind. I included LLaVA as a sanity baseline and because it is one of my favorite VLMs. However, its accuracy is... not great. 
 </p> -->
@@ -226,14 +222,15 @@ Using a VLM judge gives the highest average gain, but also has a very high varia
 There's also a large amount of variance across different judges. Having a model from another VLM family be the judge can significantly increase the accuracy when compared to self judging or having another model of the same family judge the answer. This is supported by <a href="https://arxiv.org/abs/2605.30713">Tong et al.</a> who find that VLM judges works best when their predictions are less correlated, since models that make different mistakes provide more useful
 signals.
 
-ADD A CAPTION HERE that says the best judge for a model is a model from another family.     
-<div style='text-align:center;margin:1rem 0'><img src='figures/both_datasets_actual_gain_by_regime.png' style='max-width:480px'></div>
+<figure class=plot-wrap>
+    <img src='figures/both_datasets_actual_gain_by_regime.png' style='max-width:480px'>
+    <figcaption class='note figcap'>The best judge for a model is almost always a model from a different family.</figcaption>
+</figure>
 
 
 <h3>Can you predict how well a judge will work?</h3>
 <p class=note>
-    <!-- add link here to lu -->
-    Figuring out the best judge / verifier combo for a task would be very expensive if you wanted to brute force through every combination. By estimating gain from a cheap static judge grid, we can predict what the final rejection-sampling performance should be. Lu et al address this problem by introducing a metric called <b>verifier gain</b>. After determining the precision of the judge through it's false positive rate and true positive rate, we can estimate how well the judge will do. 
+    Figuring out the best judge / verifier combo for a task would be very expensive if you wanted to brute force through every combination. By estimating gain from a cheap static judge grid, we can predict what the final rejection-sampling performance should be. <a href='https://arxiv.org/abs/2512.02304'>Lu et al</a> address this problem by introducing a metric called <b>verifier gain</b>. After determining the precision of the judge through it's false positive rate and true positive rate, we can estimate how well the judge will do. 
 </p>
 
 <div class=equation>
@@ -243,23 +240,24 @@ ADD A CAPTION HERE that says the best judge for a model is a model from another 
 
 
 <figure class=plot-wrap>
-    <img src='figures/avg_s51_report.png' alt='Predicted gain compared with actual gain for VLM judge rejection sampling'>
+    <img src='figures/avg_s51_report.png' style='max-width:440px' alt='Predicted gain compared with actual gain for VLM judge rejection sampling'>
     <figcaption class='note figcap'>The judge's effectiveness at improving the accuracy can be easily estimated from a few samples.</figcaption>
 </figure>
 
 <h4><i>Majority Vote</i></h4>
 <p class=note>
 Taking the average answer over 5 runs increases accuracy by solid 6%. It's by far the most consistent method as well. The increase in accuracy does not vary as much with model size like it does for the VLM judge.
- /p>
+</p>
 
 <h4><i>Cross-Model Majority Vote</i></h4>
 
 <p class=note>
 If majority vote over one model's samples helps, what about a majority vote across <i>all</i> the models at once? Interesting, sampling from the best and the worst models and averaging over their answers still does worse than just using Gemma-4-12B even when you average over all 13 model answers.
 </p>
+
 <figure class=plot-wrap>
-    <img src='figures/tradeoff/avg_model_majority.png' style='max-width:720px' alt='Accuracy of a cross-model majority vote averaged over CharXiv and CountBenchQA as more models join the ensemble'>
-    <figcaption class='note figcap'>Averaging over multiple model's answers underperform the best model's average accuracy.</figcaption>
+    <img src='figures/tradeoff/avg_model_majority.png' style='max-width:560px' alt='Accuracy of a cross-model majority vote averaged over CharXiv and CountBenchQA as more models join the ensemble'>
+    <figcaption class='note figcap'>Averaging over multiple model's answers underperforms the best model's average accuracy.</figcaption>
 </figure>
 
 <h3>Compute Tradeoffs</h3>
@@ -269,13 +267,14 @@ The whole point of using a small VLM is that it is efficient to run. Is the adde
 </p>
 <figure class=plot-wrap>
     <img src='figures/tradeoff/avg_combined_tradeoff.png' style='max-width:672px' alt='Accuracy versus average inference compute per query for each strategy'>
-    <figcaption class='note figcap'>Using a strong VLM with no test time compute dominates the Pareto frontier. Other test time compute methods have similar amounts of gains relative to the compute cost.</figcaption>
+    <figcaption class='note figcap'>Using a strong VLM with no test time compute dominates the Pareto frontier. Test time compute methods have similar amounts of gains relative to the compute cost.</figcaption>
 </figure>
 
 <h2>Conclusion</h2>
 
 <p class=note>
-    Smaller models are not currently strong enough to reliably use tools for multimodal questions. Having the same model generate multiple different answers and then taking the majority response is a reasonable approach, but is not as good as having a VLM judge verify the answers. If you do use a VLM judge, make sure that it is from a different model family than the original solver model. 
+    Smaller models are not currently strong enough to reliably use a zoom tool. Using a VLM judge can boost accuracy, but make sure that it is from a different model family than the original solver model. The simplest and most consistent way to improve accuracy is to just have the same model answer multiple times. However, using the best model you can fit on your GPU is still the best bang for your buck. 
+    
     <br><br>
     I uploaded the solver, judge, rejection-sampling, self-consistency, and agentic-zoom traces to a public Hugging Face dataset. This could be useful fine-tuning data for future VLMs if anyone would like to use it. 😃
 
