@@ -136,7 +136,7 @@ STRAT = [   # key,     marker, size, frontier color, style, legend label
     ("judge", "D", 60, "#e377c2", "-.", "+ best judge (k=5)"),
     ("zoom",  "^", 80, "#17becf", ":",  "zoom tool (best budget)"),
 ]
-FADED, FULL = 0.18, 1.0
+FADED, FULL = 0.15, 1.0
 
 # Collapse redundant, near-coincident per-model labels: for these models several strategy points
 # land almost on top of each other, so we keep only ONE label (the first on-frontier strategy in
@@ -145,6 +145,11 @@ COLLAPSE = {
     "gemma-4-E2B": {"maj5", "zoom"},           # zoom + maj@5 sit together -> single label
     "gemma-4-12B": {"maj5", "judge", "zoom"},  # zoom + judge + maj@5 sit together -> single label
 }
+
+# (strategy, model-substring): force the faded style even if the point technically sits on the
+# combined non-solo frontier -- e.g. a negligible pareto-improvement that visually duplicates a
+# lower-compute point of the same model (maj@5 gemma-4-E2B beats its zoom point by only +0.003).
+FORCE_FADE = [("maj5", "gemma-4-E2B")]
 
 # (strategy, model-substring) label to suppress: the marker/frontier point stays, just no text.
 OMIT_LABELS = [("judge", "Qwen3-VL-4B"),       # declutter the crowded best-judge region
@@ -184,6 +189,20 @@ def render(ds, data, title=None, ymin=None, mm=None):
         pts = [(*data[m][key], m) for m in order if data[m][key] is not None]
         frontier[key] = [p[-1] for p in T.pareto(pts)]
 
+    # combined "non-solo" frontier: the best achievable across ALL non-base strategies (+ the
+    # cross-model line). A point that sits on its own strategy frontier but is dominated by this
+    # global frontier gets faded to 50%; only the points genuinely ON it stay full opacity.
+    NONSOLO = {"maj5", "judge", "zoom"}
+    cand = []
+    for key in NONSOLO:
+        for m in frontier[key]:
+            v = data[m][key]
+            cand.append((v[0], v[1], (key, m)))
+    if mm:
+        for k, c, a in mm:
+            cand.append((c, a, ("mm", k)))
+    glob = {lab for *_, lab in T.pareto(cand)}
+
     # scatter every point: on-frontier -> full opacity, else faded into the background.
     # collect all marker coords (to repel labels away from every point) and the on-frontier
     # label texts (placed non-overlappingly by adjust_text at the end).
@@ -196,7 +215,13 @@ def render(ds, data, title=None, ymin=None, mm=None):
             v = data[m][key]
             if v is None:
                 continue
-            if m not in onfr:             # only draw on-frontier points; hide the rest entirely
+            if m not in onfr:             # not on its own strategy frontier -> hide entirely
+                continue
+            force = any(key == k and sub in m for k, sub in FORCE_FADE)
+            if key in NONSOLO and ((key, m) not in glob or force):   # dominated by the combined
+                ax.scatter(v[0], v[1], s=sz, marker=mk, alpha=FADED,  # non-solo frontier -> fade
+                           zorder=3, color=T.fam_color(m), edgecolor="k")
+                pxs.append(v[0]); pys.append(v[1])
                 continue
             ax.scatter(v[0], v[1], s=sz, marker=mk, alpha=FULL,
                        zorder=5, color=T.fam_color(m), edgecolor="k")
@@ -283,14 +308,16 @@ def render(ds, data, title=None, ymin=None, mm=None):
     if mm:
         mxs = [c for _, c, _ in mm]; mys = [a for _, _, a in mm]
         ax.plot(mxs, mys, "-", color="#4b0082", lw=2.2, zorder=4)
-        ax.scatter(mxs, mys, s=150, marker="*", color="#4b0082", edgecolor="k", zorder=5)
         handles.append(Line2D([], [], marker="*", color="#4b0082", ls="-", mec="k", ms=12, lw=2.2,
                               label="cross-model maj@k (random)"))
         for k, c, a in mm:
+            on = ("mm", k) in glob                  # dominated cross-model points fade too
+            ax.scatter(c, a, s=150, marker="*", color="#4b0082", edgecolor="k",
+                       alpha=FULL if on else FADED, zorder=5 if on else 3)
             if k == 3:
                 dx, ha = 0.91, "left"      # 3-models: slight left of its old spot
             elif k == 5:
-                dx, ha = 1.02, "left"      # 5-models: half a hair right
+                dx, ha = 1.016, "center"   # 5-models: 2/5 hair right
             else:
                 dx, ha = 1.0, "center"
             ax.text(c * dx, a - 0.018, f"{k} models", fontsize=9, ha=ha, va="top",
@@ -316,10 +343,10 @@ def render(ds, data, title=None, ymin=None, mm=None):
     # fixed gap under the lowest point -- then fan a leader line up to each shape. It's registered
     # as an obstacle (pxs/pys) so the other, adjust_text-managed labels steer around it.
     for m, pts in collapse_pts.items():
-        if "gemma-4-12B" in m:                       # this cluster sits at the top -> label to its RIGHT
-            xlab = 10 ** (max(np.log10(p[0]) for p in pts)) * 1.15
-            ylab = sum(p[1] for p in pts) / len(pts) + 0.012   # nudged up a bit
-            txt = ax.text(xlab, ylab, name(m), fontsize=10, ha="left", va="center", zorder=6)
+        if "gemma-4-12B" in m:                       # this cluster sits at the top -> label to its LEFT
+            xlab = 10 ** (min(np.log10(p[0]) for p in pts)) / 1.15 * 1.048   # 1/5 + 1 hair right
+            ylab = sum(p[1] for p in pts) / len(pts) + 0.002   # 1/2 hair down from +0.012
+            txt = ax.text(xlab, ylab, name(m), fontsize=10, ha="right", va="center", zorder=6)
         else:                                        # default: just below the cluster
             xlab = 10 ** (sum(np.log10(p[0]) for p in pts) / len(pts))
             ylab = min(p[1] for p in pts) - 0.017
