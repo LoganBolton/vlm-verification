@@ -28,6 +28,7 @@ import maj_tradeoff as MJ        # collect -> {model: [(compute,acc) k=1..5]}
 import vision_flops as VF        # vision-encoder GFLOPs
 
 ZOOM_BUDGETS = [2, 4, 8]         # zoom crop budgets swept; per model we keep the best-accuracy one
+MM_KS = [2, 3, 5, 8, 13]         # ensemble sizes plotted for the cross-MODEL random-vote line
 
 DATASETS = ["charxiv", "countbench"]
 FIGDIR = "report/figures/tradeoff"
@@ -68,6 +69,40 @@ def collect_zoom(ds, budgets=ZOOM_BUDGETS):
             if m not in best or acc > best[m][0]:
                 best[m] = (acc, comp)
     return {m: (comp, acc) for m, (acc, comp) in best.items()}
+
+
+def collect_model_majority(ds):
+    """Cross-MODEL random majority-vote line: a few (k, per-query GFLOPs, accuracy) points.
+    Unlike the per-model strategies, this votes ONE base answer from each of k DIFFERENT models
+    (see vlm/model_majority.py). Accuracy at k is maj_at_k_random[k-1] -- the expected vote
+    accuracy over a random k-model subset. Compute is the matching expected per-query cost of k
+    random models = k * (mean single-model whole-dataset GFLOPs) / n_problems."""
+    f = f"vlm/result/model_majority/{ds}/metrics.json"
+    if not os.path.exists(f):
+        return None
+    m = json.load(open(f)); md = m["metadata"]
+    M, P = md.get("n_models"), md.get("n_problems")
+    total = md.get("total_ensemble_gflops")
+    rnd = m.get("maj_at_k_random")
+    if not (M and P and total and rnd):
+        return None
+    per_model = total / M                              # mean single-model whole-dataset GFLOPs
+    return [(k, k * per_model / P, rnd[k - 1]) for k in MM_KS if k <= M]
+
+
+def average_mm(per_ds_mm):
+    """Average the cross-model line across datasets, aligned by ensemble size k."""
+    dss = [d for d in per_ds_mm if per_ds_mm[d]]
+    by_k = {}
+    for d in dss:
+        for k, c, a in per_ds_mm[d]:
+            by_k.setdefault(k, []).append((c, a))
+    out = []
+    for k in MM_KS:
+        vals = by_k.get(k)
+        if vals and len(vals) == len(dss):
+            out.append((k, sum(c for c, _ in vals) / len(vals), sum(a for _, a in vals) / len(vals)))
+    return out
 
 
 def collect(ds):
@@ -112,7 +147,11 @@ COLLAPSE = {
 }
 
 # (strategy, model-substring) label to suppress: the marker/frontier point stays, just no text.
-OMIT_LABELS = [("judge", "Qwen3-VL-4B")]       # declutter the crowded best-judge region
+OMIT_LABELS = [("judge", "Qwen3-VL-4B"),       # declutter the crowded best-judge region
+               ("judge", "InternVL3_5-4B"), ("judge", "gemma-4-E2B"),
+               ("judge", "gemma-4-E4B"),
+               ("zoom", "gemma-4-E4B"), ("zoom", "InternVL3_5-4B"),
+               ("maj5", "InternVL3_5-4B")]
 
 # (strategy, model-substring) -> which side of the marker the label sits on ("left"/"right"),
 # overriding the defaults (judge -> left, everything else -> right of the point).
@@ -126,6 +165,8 @@ LABEL_SIDE = {
 # gap-factor is the log-x divisor/multiplier -> smaller = closer to the marker.
 LABEL_PIN = {
     ("judge", "Qwen3-VL-2B"): ("left", 1.06),
+    ("judge", "Qwen3-VL-8B"): ("left", 1.05),      # snug to the left of its diamond
+    ("maj5", "Qwen3-VL-2B"): ("left", 1.05),       # snug to the left of its square
 }
 # extra vertical nudge (accuracy units, +up/-down) for specific labels, applied after side placement.
 LABEL_DY = {
@@ -133,7 +174,7 @@ LABEL_DY = {
 }
 
 
-def render(ds, data, title=None, ymin=None):
+def render(ds, data, title=None, ymin=None, mm=None):
     fig, ax = plt.subplots(figsize=(10, 6.5))
     order = sorted(data, key=lambda m: (R.FAM_ORDER.get(R.family(m), 4), R.size(m)))
 
@@ -155,12 +196,12 @@ def render(ds, data, title=None, ymin=None):
             v = data[m][key]
             if v is None:
                 continue
-            on = m in onfr
-            ax.scatter(v[0], v[1], s=sz, marker=mk, alpha=FULL if on else FADED,
-                       zorder=5 if on else 3, color=T.fam_color(m),
-                       edgecolor="k" if on else "none")
+            if m not in onfr:             # only draw on-frontier points; hide the rest entirely
+                continue
+            ax.scatter(v[0], v[1], s=sz, marker=mk, alpha=FULL,
+                       zorder=5, color=T.fam_color(m), edgecolor="k")
             pxs.append(v[0]); pys.append(v[1])
-            if on:                        # label only the models on this frontier
+            if True:                      # label only the models on this frontier
                 # collapsed models: stash each near-coincident point; one shared label is built
                 # after the loop at the centroid, with a leader line fanning out to every point.
                 rule = next((keys for sub, keys in COLLAPSE.items() if sub in m), None)
@@ -168,12 +209,19 @@ def render(ds, data, title=None, ymin=None):
                     collapse_pts.setdefault(m, []).append((v[0], v[1]))
                     continue
                 # base labels are PINNED to the left of the far-left frontier line (kept out of
-                # adjust_text, which otherwise bounces the edge ones back to the right). gemma-4-E2B
-                # sits at the very left edge with no room, so it goes just BELOW its marker instead.
+                # adjust_text, which otherwise bounces the edge ones back to the right). The two
+                # left-edge models (gemma-4-E2B, Qwen3-VL-2B) have no room on the left, so they go
+                # to the RIGHT of their markers (below / above-right) to stay on the plot.
                 if key == "base":
                     if "gemma-4-E2B" in m:
-                        txt = ax.text(v[0], v[1] - 0.03, name(m), fontsize=10,
+                        txt = ax.text(v[0] * 1.1, v[1] - 0.02, name(m), fontsize=10,
                                       ha="center", va="top", zorder=6)
+                    elif "Qwen3-VL-2B" in m:
+                        txt = ax.text(v[0] / 1.02, v[1] + 0.015, name(m), fontsize=10,
+                                      ha="right", va="bottom", zorder=6)
+                    elif "gemma-4-12B" in m:
+                        txt = ax.text(v[0] / 1.08, v[1], name(m), fontsize=10,
+                                      ha="right", va="center", zorder=6)
                     else:
                         txt = ax.text(v[0] / 1.18, v[1], name(m), fontsize=10,
                                       ha="right", va="center", zorder=6)
@@ -187,11 +235,18 @@ def render(ds, data, title=None, ymin=None):
                             if key == k and sub in m), None)
                 if pin is not None:
                     side, fac = pin
+                    pdy = next((d for (k, sub), d in LABEL_DY.items() if key == k and sub in m), 0.0)
+                    if side == "down":                       # fac = vertical gap in accuracy units
+                        txt = ax.text(v[0], v[1] - fac, name(m), fontsize=10,
+                                      ha="center", va="top", zorder=6)
+                        leader.append((txt, [(v[0], v[1])]))
+                        pxs.append(v[0]); pys.append(v[1] - fac)
+                        continue
                     x = v[0] / fac if side == "left" else v[0] * fac
-                    txt = ax.text(x, v[1], name(m), fontsize=10,
+                    txt = ax.text(x, v[1] + pdy, name(m), fontsize=10,
                                   ha="right" if side == "left" else "left", va="center", zorder=6)
                     leader.append((txt, [(v[0], v[1])]))
-                    pxs.append(x); pys.append(v[1])
+                    pxs.append(x); pys.append(v[1] + pdy)
                     continue
                 # judge labels start on the LEFT of their marker (that side is less crowded);
                 # adjust_text refines from there, leader lines re-anchored to the marker below.
@@ -223,13 +278,35 @@ def render(ds, data, title=None, ymin=None):
             t = np.linspace(0, 1, 12)
             pxs.extend(10 ** (np.log10(x0) + t * (np.log10(x1) - np.log10(x0))))
             pys.extend(y0 + t * (y1 - y0))
+    # cross-MODEL random majority-vote line: a separate k-sweep (2..13 random models voting), not a
+    # per-model strategy, so it gets its own brown star line + one "k models" tag per point.
+    if mm:
+        mxs = [c for _, c, _ in mm]; mys = [a for _, _, a in mm]
+        ax.plot(mxs, mys, "-", color="#4b0082", lw=2.2, zorder=4)
+        ax.scatter(mxs, mys, s=150, marker="*", color="#4b0082", edgecolor="k", zorder=5)
+        handles.append(Line2D([], [], marker="*", color="#4b0082", ls="-", mec="k", ms=12, lw=2.2,
+                              label="cross-model maj@k (random)"))
+        for k, c, a in mm:
+            if k == 3:
+                dx, ha = 0.91, "left"      # 3-models: slight left of its old spot
+            elif k == 5:
+                dx, ha = 1.02, "left"      # 5-models: half a hair right
+            else:
+                dx, ha = 1.0, "center"
+            ax.text(c * dx, a - 0.018, f"{k} models", fontsize=9, ha=ha, va="top",
+                    color="#4b0082", zorder=6)
+        pxs.extend(mxs); pys.extend(mys)          # register as obstacles for label placement
+
     ax.legend(handles=handles, fontsize=8, loc="lower right", title="Pareto frontier per strategy")
     ax.set_xscale("log")
-    ax.set_xlabel("Avg Inference Compute Per Query (GFLOPs, log scale)")
+    ax.set_xlabel("Average Inference Compute Per Query (higher is worse)")
     ax.set_ylabel("accuracy")
     ax.set_title(title or "Compute vs Accuracy Tradeoff Across Strategies")
     ax.grid(alpha=0.3, which="both")
-    ax.set_xlim(right=1.1e5)         # cut the x-axis off around 10^5 (all frontier points sit well left)
+    right = 1.1e5                    # cut the x-axis off around 10^5 (all frontier points sit well left)
+    if mm:                           # ...but leave room for the cross-model line's high-k points
+        right = max(right, max(c for _, c, _ in mm) * 1.6)
+    ax.set_xlim(right=right)
     if ymin is not None:
         ax.set_ylim(bottom=ymin)
 
@@ -245,7 +322,7 @@ def render(ds, data, title=None, ymin=None):
             txt = ax.text(xlab, ylab, name(m), fontsize=10, ha="left", va="center", zorder=6)
         else:                                        # default: just below the cluster
             xlab = 10 ** (sum(np.log10(p[0]) for p in pts) / len(pts))
-            ylab = min(p[1] for p in pts) - 0.03
+            ylab = min(p[1] for p in pts) - 0.017
             txt = ax.text(xlab, ylab, name(m), fontsize=10, ha="center", va="top", zorder=6)
         leader.append((txt, pts))
         pxs.append(xlab); pys.append(ylab)
@@ -293,16 +370,18 @@ def average(per_ds):
 
 def main():
     os.makedirs(FIGDIR, exist_ok=True)
-    per_ds = {}
+    per_ds, per_ds_mm = {}, {}
     for ds in DATASETS:
         data = collect(ds)
         if not data:
             print(f"[{ds}] no data"); continue
         per_ds[ds] = data
-        print(f"  -> wrote {render(ds, data)}")
+        per_ds_mm[ds] = collect_model_majority(ds)
+        print(f"  -> wrote {render(ds, data, mm=per_ds_mm[ds])}")
     if len(per_ds) == len(DATASETS):
         avg = average(per_ds)
-        out = render("avg", avg, title="Compute vs Accuracy Tradeoff Across Strategies", ymin=0.35)
+        out = render("avg", avg, title="Compute vs Accuracy Tradeoff Across Strategies", ymin=0.35,
+                     mm=average_mm(per_ds_mm))
         print(f"  -> wrote {out}")
 
 

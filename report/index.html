@@ -26,7 +26,7 @@
     table.sum .rowh{min-width:150px}
     table.kv{border-collapse:collapse;margin:.5rem 0} table.kv td,table.kv th{border:1px solid #ccc;padding:4px 12px}
     .grid2{display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start}
-    .example-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,3fr);gap:0.25rem;align-items:start;margin:2rem 0}
+    .example-grid{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:2rem;margin:2rem 0}
     .example-grid figure,.plot-wrap{margin:0;text-align:center}
     .example-grid img{width:100%;max-width:520px;height:205px;object-fit:cover}
     .figcap{max-width:520px;margin:.45rem auto 2rem}
@@ -79,7 +79,7 @@ a:hover{text-decoration-color:#111}
 .note{color:#444;font-style:normal}
 .mx td.diag,.rollout-step{border-color:#111}
 /* show the full CharXiv/CountBench example photos instead of a cropped strip */
-.example-grid img{height:auto;object-fit:contain;max-width:100%;display:block;margin-inline:auto}
+.example-grid img{height:auto;object-fit:contain;max-width:100%;width:auto;display:block;margin-inline:auto}
 /* let the methods diagram span the full text column */
 div:has(> img[src$="methods.svg"]){margin:2rem 0!important}
 div:has(> img[src$="methods.svg"]) img{width:100%;height:auto}
@@ -132,12 +132,12 @@ So that leaves us with open source, local models. In particular, I'm most intere
 
 <div class=example-grid>
     <figure>
-        <img src='figures/charxiv_ex.jpg' style='max-width:520px'>
-        <figcaption class='note figcap'><b>CharXiv:</b> <i>"At epoch 60, which training method has a higher adversarial accuracy?"</i><br><b>Ground truth</b>: Accelerated DAT</figcaption>
+        <img src='figures/charxiv_ex.jpg' style='max-width:440px'>
+        <figcaption class='note figcap' style='max-width:440px'><b>CharXiv:</b> <i>"At epoch 60, which training method has a higher adversarial accuracy?"</i><br><b>Ground truth</b>: Accelerated DAT</figcaption>
     </figure>
     <figure>
-        <img src='figures/countbench_ex.jpg' style='max-width:55%'>
-        <figcaption class='note figcap' style='max-width:55%'><b>CountBench:</b> <i>"How many spoons are there in the image?"</i><br>
+        <img src='figures/countbench_ex.jpg' style='max-width:230px'>
+        <figcaption class='note figcap' style='max-width:230px'><b>CountBench:</b> <i>"How many spoons are there in the image?"</i><br>
             <b>Ground truth: </b>6</figcaption>
     </figure>
 </div>
