@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-consistency / majority-vote@N queue. Waits for the GPUs to free up (so it can be
 # queued behind another job), then runs vlm/self_consistency.py for each combo.
-# Skips combos whose metrics.json already exists.  Usage: bash vlm/run_self_consistency.sh
+# Skips combos whose metrics.json already exists.  Usage: bash vlm/runs/run_self_consistency.sh
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0

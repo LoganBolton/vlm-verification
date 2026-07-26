@@ -23,7 +23,7 @@ while pgrep -f "rejection_sampling.py|run_overnight_rejection.sh" >/dev/null 2>&
 log "rejection queue done + GPUs releasing -- running the missing zoom cell (c8 InternVL-2B, 40960 ctx)"
 
 env DATASETS=countbench BUDGETS=8 MODELS="OpenGVLab/InternVL3_5-2B" \
-    bash vlm/run_agentic_vision.sh >>"$LOGDIR/zoom_fill_run.out" 2>&1
+    bash vlm/runs/run_agentic_vision.sh >>"$LOGDIR/zoom_fill_run.out" 2>&1
 log "run_agentic_vision returned"
 
 if [[ -f "$CELL" ]]; then

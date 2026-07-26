@@ -8,8 +8,8 @@
 #            InternVL3.5-1B, InternVL3.5-14B, gemma-4-E2B-it
 #   FILL     budget curves for the non-Qwen families at c=2 and c=8 (Qwen 2/4/8 already have
 #            c2/c4/c8): InternVL3.5 {1,2,4,8,14}B + gemma-4 {E2B,E4B}
-# All via vlm/run_agentic_vision_other.sh (MODELS/DATASETS/CROPS env). Launch detached:
-#   setsid bash vlm/run_phase3_zoom.sh >vlm/result/_run_logs/phase3_zoom.out 2>&1 &
+# All via vlm/runs/run_agentic_vision_other.sh (MODELS/DATASETS/CROPS env). Launch detached:
+#   setsid bash vlm/runs/run_phase3_zoom.sh >vlm/result/_run_logs/phase3_zoom.out 2>&1 &
 set -u
 cd /home/log/Github/vlm-verification || exit 1
 LOGDIR=vlm/result/_run_logs; mkdir -p "$LOGDIR"
@@ -48,7 +48,7 @@ run_zoom() {  # $1=budget  $2=models  $3=label
     if [[ "$stall" -ge 4 ]]; then log "$label STUCK $d/$target after 4 no-progress -- skipping group"; return 1; fi
     log "$label $d/$target -- (re)launching zoom (c=$b)"
     sweep_gpu
-    DATASETS=charxiv MODELS="$models" CROPS="$b" bash vlm/run_agentic_vision_other.sh \
+    DATASETS=charxiv MODELS="$models" CROPS="$b" bash vlm/runs/run_agentic_vision_other.sh \
       >>"$LOGDIR/phase3_c${b}.out" 2>&1 || log "$label launcher exited nonzero (re-checking)"
   done
 }
@@ -68,4 +68,4 @@ run_zoom 2 "$NONQWEN" "zoom-c2-nonqwen"  # FILL: budget curve low
 run_zoom 8 "$NONQWEN" "zoom-c8-nonqwen"  # FILL: budget curve high
 
 log "===== PHASE 3 DONE (whatever completed; STUCK groups noted above) ====="
-log "Rollout viewers + report regenerate via: bash vlm/build_report.sh"
+log "Rollout viewers + report regenerate via: bash vlm/runs/build_report.sh"

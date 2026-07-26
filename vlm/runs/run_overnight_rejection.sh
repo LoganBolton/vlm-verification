@@ -31,15 +31,15 @@ while pgrep -f "agentic_vision.py|run_agentic_vision.sh" >/dev/null 2>&1; do sle
 log "GPUs clear of zoom -- starting rejection queue"
 
 log "STEP 1/3: CountBench 7x7 core rejection grid (k=5, cheap-first, resumable)"
-GRID_DS=countbench bash vlm/run_rejection.sh >>"$LOGDIR/overnight_rej_cb7.out" 2>&1
+GRID_DS=countbench bash vlm/runs/run_rejection.sh >>"$LOGDIR/overnight_rej_cb7.out" 2>&1
 log "STEP 1/3 returned"
 
 log "STEP 2/3: CountBench 13x13 rejection expansion (fills the remaining cells)"
-GRID_DS=countbench GRID_MODELS="$M13" bash vlm/run_rejection.sh >>"$LOGDIR/overnight_rej_cb13.out" 2>&1
+GRID_DS=countbench GRID_MODELS="$M13" bash vlm/runs/run_rejection.sh >>"$LOGDIR/overnight_rej_cb13.out" 2>&1
 log "STEP 2/3 returned"
 
 log "STEP 3/3: CharXiv 13x13 rejection expansion (skips the 7x7 core already done)"
-GRID_DS=charxiv GRID_MODELS="$M13" bash vlm/run_rejection.sh >>"$LOGDIR/overnight_rej_cx13.out" 2>&1
+GRID_DS=charxiv GRID_MODELS="$M13" bash vlm/runs/run_rejection.sh >>"$LOGDIR/overnight_rej_cx13.out" 2>&1
 log "STEP 3/3 returned"
 
 # refresh the §5.1 predicted-vs-realized figures/report off the new rejection data

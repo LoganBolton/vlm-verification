@@ -9,7 +9,7 @@
 #   - InternVL 2B/4B + 14B        : small-solver + big-verifier compute-efficiency story
 #   - oracle rows                 : upper bound on what verification could ever buy
 #
-# Usage:  bash vlm/run_rejection.sh
+# Usage:  bash vlm/runs/run_rejection.sh
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0

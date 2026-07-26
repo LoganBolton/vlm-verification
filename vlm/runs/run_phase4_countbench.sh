@@ -38,7 +38,7 @@ done
 
 # ---- 2. CountBench 13x13 verifier grid (blocks; resumable) ----
 log "launching CountBench 13x13 verifier grid"
-DS=countbench GRID_MODELS="$M13" bash vlm/run_verifier_grid.sh >>"$LOGDIR/phase4_grid.out" 2>&1
+DS=countbench GRID_MODELS="$M13" bash vlm/runs/run_verifier_grid.sh >>"$LOGDIR/phase4_grid.out" 2>&1
 log "CountBench verifier grid returned"
 
 # ---- 3. gain analysis ----

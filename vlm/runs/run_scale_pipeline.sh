@@ -19,7 +19,7 @@
 # zombie workers holding all GPU memory, which made every later step fail instantly --
 # so each GPU step is preceded by a sweep that kills leftovers and waits for free VRAM.
 #
-# Usage:  bash vlm/run_scale_pipeline.sh tier2
+# Usage:  bash vlm/runs/run_scale_pipeline.sh tier2
 set -u
 
 TIER="${1:?usage: run_scale_pipeline.sh tier2|tier3|intern}"

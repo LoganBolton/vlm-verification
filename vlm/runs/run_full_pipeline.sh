@@ -6,7 +6,7 @@
 # are non-fatal -- one bad model must not sink the whole overnight run. A live STATUS file
 # tracks progress. Re-running is safe-ish: it appends new timestamped result files.
 #
-# Usage:  bash vlm/run_full_pipeline.sh
+# Usage:  bash vlm/runs/run_full_pipeline.sh
 set -u
 
 PY=.venv-vllm/bin/python

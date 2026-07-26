@@ -4,7 +4,7 @@
 # §5.1 figures along the way. Every sub-step is resumable; this script relaunches a step if
 # it dies, with stall-detection so a permanently-failing cell can't loop forever.
 # Launch detached:
-#   setsid bash vlm/run_phase_chain.sh >vlm/result/_run_logs/phase_chain.out 2>&1 &
+#   setsid bash vlm/runs/run_phase_chain.sh >vlm/result/_run_logs/phase_chain.out 2>&1 &
 set -u
 cd /home/log/Github/vlm-verification || exit 1
 PYV=.venv/bin/python            # no-GPU analysis venv
@@ -79,13 +79,13 @@ figures
 # ---- Phase 2a: widen static grid to 13 models (169 pairs) ----
 log "PHASE 2a: static verifier grid, 13 models (target 169 pairs)"
 run_until 169 grid_pairs_done \
-  "GRID_MODELS=\"$MODELS13\" bash vlm/run_verifier_grid.sh" "grid13" || exit 1
+  "GRID_MODELS=\"$MODELS13\" bash vlm/runs/run_verifier_grid.sh" "grid13" || exit 1
 figures
 
 # ---- Phase 2b: SKIPPED per user decision 2026-06-28 (value-for-time) ----
 # §5.1 is already validated by Phase 1's 49 rejection cells; the 13-model rejection re-run
 # (~5.5 days) only densifies the scatter, so we stop after 2a. To run it later:
-#   GRID_MODELS="$MODELS13" GRID_DS=charxiv bash vlm/run_rejection.sh   (resumable, skips done)
+#   GRID_MODELS="$MODELS13" GRID_DS=charxiv bash vlm/runs/run_rejection.sh   (resumable, skips done)
 log "PHASE 2b SKIPPED (user decision) -- stopping after the 13-model static grid"
 
 log "===== PHASE CHAIN DONE: Phase 1 + Phase 2a (13-model static gain grid) complete ====="

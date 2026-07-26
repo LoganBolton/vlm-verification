@@ -48,6 +48,6 @@ log "all gemma-native charxiv zoom done -- rebuilding report"
 .venv/bin/python vlm/build_charxiv_report.py >>"$LOGDIR/gemma_native_report.out" 2>&1 && log "report rebuilt"
 
 log "resuming paused CountBench grid (phase 4 supervisor + watchdog)"
-setsid bash vlm/run_phase4_countbench.sh >>"$LOGDIR/phase4_supervisor.out" 2>&1 </dev/null &
+setsid bash vlm/runs/run_phase4_countbench.sh >>"$LOGDIR/phase4_supervisor.out" 2>&1 </dev/null &
 setsid bash vlm/result/_run_logs/_phase4_watch.sh >/dev/null 2>&1 </dev/null &
 log "===== GEMMA-NATIVE ZOOM SUPERVISOR DONE ====="

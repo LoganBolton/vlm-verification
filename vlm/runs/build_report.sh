@@ -3,7 +3,7 @@
 # result JSON produced by run_full_pipeline.sh / run_scale_pipeline.sh. Datasets whose
 # result dir has no verify_*.json yet are skipped, so this is safe to re-run anytime.
 #
-# Usage:  bash vlm/build_report.sh
+# Usage:  bash vlm/runs/build_report.sh
 set -u
 PY=.venv/bin/python   # plotting/report deps (matplotlib) live in the base venv
 VIEW_LIMIT="${VIEW_LIMIT:-200}"   # cap examples per HTML viewer so files stay openable

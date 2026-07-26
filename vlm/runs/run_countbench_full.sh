@@ -34,7 +34,7 @@ fi
 SC_MISSING="llava-hf/llava-1.5-7b-hf Qwen/Qwen3-VL-2B-Instruct google/gemma-4-E2B-it \
 Qwen/Qwen3-VL-4B-Instruct google/gemma-4-E4B-it llava-hf/llava-1.5-13b-hf OpenGVLab/InternVL3_5-14B"
 log "PHASE A: CountBench maj@k (N=5) for missing solvers -> $SC_MISSING"
-N=5 DATASETS=countbench MODELS="$SC_MISSING" bash vlm/run_self_consistency.sh \
+N=5 DATASETS=countbench MODELS="$SC_MISSING" bash vlm/runs/run_self_consistency.sh \
   >>"$LOGDIR/countbench_full_sc.out" 2>&1
 log "PHASE A returned"
 
@@ -44,7 +44,7 @@ OpenGVLab/InternVL3_5-1B OpenGVLab/InternVL3_5-2B OpenGVLab/InternVL3_5-4B \
 OpenGVLab/InternVL3_5-8B OpenGVLab/InternVL3_5-14B \
 google/gemma-4-E2B-it google/gemma-4-E4B-it google/gemma-4-12B-it"
 log "PHASE B: CountBench zoom sweep (budgets 2/4/8) for 11 models (gemma native auto)"
-DATASETS=countbench BUDGETS="2 4 8" MODELS="$ZOOM_MODELS" bash vlm/run_agentic_vision.sh \
+DATASETS=countbench BUDGETS="2 4 8" MODELS="$ZOOM_MODELS" bash vlm/runs/run_agentic_vision.sh \
   >>"$LOGDIR/countbench_full_zoom.out" 2>&1
 log "PHASE B returned"
 

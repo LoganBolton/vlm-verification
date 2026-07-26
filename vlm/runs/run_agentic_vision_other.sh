@@ -4,12 +4,12 @@
 # emit it too, but compliance is not guaranteed, so this is exploratory. llava-1.5 is
 # excluded: it accepts only ONE image per prompt and the zoom loop adds images.
 #
-# Each family gets its known vLLM quirk flags (see vlm/run_self_consistency.sh extra_for):
+# Each family gets its known vLLM quirk flags (see vlm/runs/run_self_consistency.sh extra_for):
 #   InternVL3.5 -> 32k ctx, repetition_penalty 1.1, disable chunked mm
 #   gemma-4     -> 32k ctx
 #
 # Budget fixed at c=4 (the primary), both datasets. RESUMABLE (skips existing metrics.json).
-# Usage:  bash vlm/run_agentic_vision_other.sh
+# Usage:  bash vlm/runs/run_agentic_vision_other.sh
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0

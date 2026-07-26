@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Agentic-vision (zoom-tool) overnight queue -- the active-perception counterpart to
-# vlm/run_self_consistency.sh (pass@N) and the rejection/verify runs (VLM judge).
+# vlm/runs/run_self_consistency.sh (pass@N) and the rejection/verify runs (VLM judge).
 #
 # Sweeps the full Qwen3-VL ladder (2B/4B/8B) x both datasets x a zoom budget {2,4,8}, so
 # you get an accuracy-vs-zoom-budget curve to compare against pass@k and the verifier.
 # Ordered cheap-first (countbench before charxiv, small budget/model first) so a partial
 # overnight run still yields the most complete combos. RESUMABLE: any combo whose
 # metrics.json already exists is skipped, so it is safe to re-run.  Usage:
-#   bash vlm/run_agentic_vision.sh
-# Override the sweep:  MODELS="..." DATASETS="..." BUDGETS="..." bash vlm/run_agentic_vision.sh
+#   bash vlm/runs/run_agentic_vision.sh
+# Override the sweep:  MODELS="..." DATASETS="..." BUDGETS="..." bash vlm/runs/run_agentic_vision.sh
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0

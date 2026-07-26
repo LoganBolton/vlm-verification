@@ -10,7 +10,7 @@
 #
 # One verifier is loaded once and judges ALL solver runs (cheap). Resumable at verifier
 # granularity (skips a verifier whose pair files already all exist).
-# Usage:  bash vlm/run_verifier_grid.sh        (override set via GRID_MODELS="...")
+# Usage:  bash vlm/runs/run_verifier_grid.sh        (override set via GRID_MODELS="...")
 set -u
 PY=.venv-vllm/bin/python
 export VLLM_USE_FLASHINFER_SAMPLER=0
