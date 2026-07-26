@@ -9,7 +9,7 @@ solver_gflops / n_samples), so the strategies are directly comparable:
 The three are joined per model; the red line is the Pareto frontier over everything.
 
 Writes report/figures/tradeoff/{ds}_combined_tradeoff.png (+ an 'avg'). Run:
-  .venv/bin/python vlm/combined_tradeoff.py
+  .venv/bin/python vlm/analysis/combined_tradeoff.py
 """
 import os, sys, json, glob
 import matplotlib
@@ -74,7 +74,7 @@ def collect_zoom(ds, budgets=ZOOM_BUDGETS):
 def collect_model_majority(ds):
     """Cross-MODEL random majority-vote line: a few (k, per-query GFLOPs, accuracy) points.
     Unlike the per-model strategies, this votes ONE base answer from each of k DIFFERENT models
-    (see vlm/model_majority.py). Accuracy at k is maj_at_k_random[k-1] -- the expected vote
+    (see vlm/pipeline/model_majority.py). Accuracy at k is maj_at_k_random[k-1] -- the expected vote
     accuracy over a random k-model subset. Compute is the matching expected per-query cost of k
     random models = k * (mean single-model whole-dataset GFLOPs) / n_problems."""
     f = f"vlm/result/model_majority/{ds}/metrics.json"

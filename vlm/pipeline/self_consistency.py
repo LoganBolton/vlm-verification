@@ -1,5 +1,5 @@
 """Self-consistency / majority-vote@N baseline -- the verification-free counterpart
-to vlm/rejection_sampling.py.
+to vlm/pipeline/rejection_sampling.py.
 
 Each problem is solved N times (one vLLM call with n=N, temperature sampling). From the
 N samples we compute, as a function of budget k = 1..N:
@@ -14,7 +14,7 @@ rejection run) and pass@k against the oracle ceiling: does spending the same ext
 solver compute on majority vote capture more of the headroom than the verifier does?
 
 Usage:
-    python vlm/self_consistency.py --solver_model_name OpenGVLab/InternVL3_5-8B \
+    python vlm/pipeline/self_consistency.py --solver_model_name OpenGVLab/InternVL3_5-8B \
         --data_dir data/countbench --n_samples 16 \
         --output_dir vlm/result/self_consistency/countbench/InternVL3-5-8B
 """

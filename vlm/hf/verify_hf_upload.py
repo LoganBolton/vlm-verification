@@ -17,7 +17,7 @@ experiment x record_type), each with its joined image (decoded from the HF image
 config), all flattened fields, and the raw_record JSON — so you can eyeball that what
 landed on HuggingFace matches reality.
 
-Run:  .venv-vlm/bin/python vlm/verify_hf_upload.py
+Run:  .venv-vlm/bin/python vlm/hf/verify_hf_upload.py
 """
 import base64
 import html
@@ -32,7 +32,7 @@ import pyarrow.parquet as pq
 from huggingface_hub import HfApi, hf_hub_download
 
 REPO = os.environ.get("HF_DATASET_REPO", "loganbolton/vlm-verification-logs")
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 OUT_HTML = ROOT / "vlm" / "viz" / "hf_verify_sample.html"
 PER_CELL = int(os.environ.get("PER_CELL", "2"))   # rows per (experiment,record_type)
 
@@ -42,7 +42,7 @@ api = HfApi()
 def disk_truth():
     """Row/file counts the exporter would produce from the current disk state."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("exp", ROOT / "vlm" / "export_hf_dataset.py")
+    spec = importlib.util.spec_from_file_location("exp", ROOT / "vlm" / "hf" / "export_hf_dataset.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     files, rows = set(), 0

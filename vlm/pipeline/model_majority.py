@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-MODEL majority vote -- the ensemble counterpart to vlm/self_consistency.py.
+"""Cross-MODEL majority vote -- the ensemble counterpart to vlm/pipeline/self_consistency.py.
 
 Self-consistency takes N samples from ONE model and votes. Here we take ONE answer from
 each of MANY DIFFERENT models and let them vote: every model submits its single base-run
@@ -22,9 +22,9 @@ Compute per model is the canonical single-pass GFLOPs shared with the other trad
 (compute_tradeoff.canonical_cost); the k-model ensemble costs the SUM over its members.
 
 Writes metrics.json + records.json under --output_dir and one figure per dataset. Run:
-  .venv/bin/python vlm/model_majority.py --dataset charxiv
-  .venv/bin/python vlm/model_majority.py --dataset countbench
-  .venv/bin/python vlm/model_majority.py            # both, + report figures
+  .venv/bin/python vlm/pipeline/model_majority.py --dataset charxiv
+  .venv/bin/python vlm/pipeline/model_majority.py --dataset countbench
+  .venv/bin/python vlm/pipeline/model_majority.py            # both, + report figures
 """
 from collections import Counter
 from pprint import pprint
@@ -32,6 +32,7 @@ import argparse, glob, json, os, random, re, sys
 
 VLM_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, VLM_DIR)
+sys.path.insert(0, os.path.join(os.path.dirname(VLM_DIR), "analysis"))
 import score_charxiv                                    # noqa: E402
 import compute_tradeoff as T                            # canonical_cost, fam_color  # noqa: E402
 

@@ -15,8 +15,8 @@ attempt-0 "base" accuracy (hence realized_gain) cannot be recovered offline -- t
 re-run to change. New queue cells already use the fixed scorer.
 
 Backs up each file to <path>.prev once (never overwrites an existing .prev). Then re-run:
-    .venv/bin/python vlm/verifier_gain.py --dataset charxiv
-    .venv/bin/python vlm/build_charxiv_report.py
+    .venv/bin/python vlm/analysis/verifier_gain.py --dataset charxiv
+    .venv/bin/python vlm/analysis/build_charxiv_report.py
 """
 import glob, json, os, shutil, sys
 sys.path.insert(0, os.path.dirname(__file__))

@@ -12,7 +12,7 @@ The procedure follows the normal LLM solver exactly:
               -> generate (transformers or vLLM) -> save raw outputs
 
 This script does NOT judge correctness. It only records what the model produced.
-Scoring (answer extraction + accuracy) is a separate step: `vlm/score_results.py`.
+Scoring (answer extraction + accuracy) is a separate step: `vlm/pipeline/score_results.py`.
 
 Each run writes ONE self-describing JSON file named `<dataset>_<model>_<time>.json`
 (e.g. `countbench_Qwen3-VL-2B-Instruct_20260607-223800.json`) so results are easy to
@@ -438,7 +438,7 @@ def main() -> None:
 
     # ------------------------------ COLLECT RAW OUTPUTS ------------------------------
     # This file holds raw model generations only. Correctness/accuracy is intentionally
-    # NOT computed here -- scoring is a separate step (see vlm/score_results.py) so the
+    # NOT computed here -- scoring is a separate step (see vlm/pipeline/score_results.py) so the
     # generation artifact and the evaluation can be regenerated/changed independently.
     solver_total = len(dataset) * args.solver_n_samples
     assert len(outputs) == solver_total, (len(outputs), solver_total)
@@ -464,7 +464,7 @@ def main() -> None:
         json.dump({"metadata": metadata, "records": records}, f, indent=4)
 
     print(f"\nSaved {len(records)} raw generations to {out_path}")
-    print("Run vlm/score_results.py on this file to compute correctness.")
+    print("Run vlm/pipeline/score_results.py on this file to compute correctness.")
 
 
 if __name__ == "__main__":

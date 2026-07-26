@@ -49,9 +49,9 @@ DATASETS=countbench BUDGETS="2 4 8" MODELS="$ZOOM_MODELS" bash vlm/runs/run_agen
 log "PHASE B returned"
 
 # ---- C. refresh CountBench gain (grid unchanged, but harmless) + report ----
-.venv/bin/python vlm/verifier_gain.py --dataset countbench >>"$LOGDIR/countbench_full_gain.out" 2>&1 \
+.venv/bin/python vlm/analysis/verifier_gain.py --dataset countbench >>"$LOGDIR/countbench_full_gain.out" 2>&1 \
   && log "verifier_gain countbench refreshed" || log "verifier_gain countbench refresh FAILED"
-.venv/bin/python vlm/build_charxiv_report.py >>"$LOGDIR/countbench_full_report.out" 2>&1 \
+.venv/bin/python vlm/analysis/build_charxiv_report.py >>"$LOGDIR/countbench_full_report.out" 2>&1 \
   && log "report rebuilt" || log "report rebuild skipped/failed"
 
 touch "$DONE_MARK"

@@ -22,7 +22,7 @@ from pathlib import Path
 from datasets import Dataset, Features, Value, Image, Sequence
 
 REPO = os.environ.get("HF_DATASET_REPO", "loganbolton/vlm-verification-logs")
-ROOT = Path(__file__).resolve().parent.parent          # repo root
+ROOT = Path(__file__).resolve().parents[2]            # repo root
 RESULT_DIR = ROOT / "vlm" / "result"
 DATA_DIR = ROOT / "data"
 

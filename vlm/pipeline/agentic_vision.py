@@ -6,8 +6,8 @@ crops and magnifies any region of the image, as many times as a budget allows. T
 re-inspect fine detail (small objects to count, tiny axis labels to read) on demand.
 
 The three things we compare, all on the same problem set / scorers:
-  - pass@N / majority vote (vlm/self_consistency.py)  -- spend extra compute on more samples
-  - VLM judge / rejection sampling (vlm/rejection_sampling.py) -- spend it on a verifier
+  - pass@N / majority vote (vlm/pipeline/self_consistency.py)  -- spend extra compute on more samples
+  - VLM judge / rejection sampling (vlm/pipeline/rejection_sampling.py) -- spend it on a verifier
   - agentic vision (this file)                         -- spend it on re-looking at the image
 
 The question: does letting the model zoom capture more of the headroom than majority
@@ -26,7 +26,7 @@ Coordinates are fractions of the original image in [0,1] (we also accept the 0-1
 grounding convention and rescale). Crops are upscaled so the model actually sees detail.
 
 Usage:
-    python vlm/agentic_vision.py --solver_model_name Qwen/Qwen3-VL-8B-Instruct \
+    python vlm/pipeline/agentic_vision.py --solver_model_name Qwen/Qwen3-VL-8B-Instruct \
         --data_dir data/countbench --max_crops 4 --solver_max_model_len 32768 \
         --output_dir vlm/result/agentic_vision/countbench/Qwen3-VL-8B-Instruct
 """

@@ -8,14 +8,17 @@
 Also rewrites each CharXiv rejection records.json with corrected solver_correct /
 solver_extracted_answer, and prints old-vs-new accuracy for every run.
 """
-import json, os, glob
+import json, os, glob, sys
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import score_charxiv as sc  # fixed v3 scorer
 
-RES  = os.path.join(os.path.dirname(__file__), "result")
+VLM_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(VLM_DIR, "pipeline"))
+import score_charxiv as sc  # fixed v3 scorer  # noqa: E402
+
+RES  = os.path.join(VLM_DIR, "result")
 REJ  = os.path.join(RES, "rejection", "charxiv")
 OUT  = os.path.join(RES, "plots")
 os.makedirs(OUT, exist_ok=True)

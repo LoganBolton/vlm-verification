@@ -1,8 +1,8 @@
-"""Score a CharXiv VLM run produced by `vlm/vlm_inference.py`.
+"""Score a CharXiv VLM run produced by `vlm/pipeline/vlm_inference.py`.
 
 CharXiv reasoning answers are short free-text (model names, axis labels, numbers, short
 phrases like "Joint-CNN", "lambda_L = 0.13", "(b) OPT", "94"), NOT integer counts. So the
-CountBench scorer (`vlm/score_results.py`, which extracts a single integer and does exact
+CountBench scorer (`vlm/pipeline/score_results.py`, which extracts a single integer and does exact
 match) does not apply here, and this is its free-text sibling.
 
 The *reference* CharXiv benchmark grades with a GPT-4 judge. To keep this pipeline fully
@@ -22,7 +22,7 @@ deterministic so the (expensive) generations can be re-scored anytime. The chose
 is recorded in the output file's metadata so results stay self-describing.
 
 Usage:
-    python vlm/score_charxiv.py vlm/result/charxiv/charxiv_<model>_<time>.json
+    python vlm/pipeline/score_charxiv.py vlm/result/charxiv/charxiv_<model>_<time>.json
 """
 
 from pprint import pprint
@@ -34,7 +34,7 @@ import re
 import sys
 import unicodedata
 
-SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
 sys.path.insert(0, SRC_DIR)
 from answer_extractors import get_final_box_match  # noqa: E402
 
@@ -135,7 +135,7 @@ def is_correct(gold: str, response: str) -> bool:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("results_file", type=str,
-                        help="Run JSON produced by vlm/vlm_inference.py (CharXiv solver run)")
+                        help="Run JSON produced by vlm/pipeline/vlm_inference.py (CharXiv solver run)")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="Where to write the scores file (default: alongside results_file)")
     return parser.parse_args()

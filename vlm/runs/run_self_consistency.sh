@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Self-consistency / majority-vote@N queue. Waits for the GPUs to free up (so it can be
-# queued behind another job), then runs vlm/self_consistency.py for each combo.
+# queued behind another job), then runs vlm/pipeline/self_consistency.py for each combo.
 # Skips combos whose metrics.json already exists.  Usage: bash vlm/runs/run_self_consistency.sh
 set -u
 PY=.venv-vllm/bin/python
@@ -67,7 +67,7 @@ for entry in "${RUNS[@]}"; do
   LOGF="$LOGDIR/sc_${DS}_${SS}.log"
   wait_gpu || true   # ensure prior run fully released VRAM before TP init (avoids NCCL stall)
   log "START $DS solver=$SS"
-  if $PY vlm/self_consistency.py --solver_model_name "$SOLVER" $(extra_for "$SOLVER") $MRC \
+  if $PY vlm/pipeline/self_consistency.py --solver_model_name "$SOLVER" $(extra_for "$SOLVER") $MRC \
         --data_dir "data/$DS" --n_samples "$N" --output_dir "$OUT" >"$LOGF" 2>&1; then
     log "OK    $DS solver=$SS"
   else

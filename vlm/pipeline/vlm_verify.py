@@ -4,7 +4,7 @@ half of `src/inference.py`.
 A *verifier* model is shown the SAME image, the question, and a *solver* model's full
 response, and must judge whether the solver's answer is correct (`\\boxed{correct}`) or
 incorrect (`\\boxed{incorrect}`). We then compare that verdict against the ground-truth
-label (`solver_correct`, from `vlm/score_results.py`) to measure verifier quality.
+label (`solver_correct`, from `vlm/pipeline/score_results.py`) to measure verifier quality.
 
 The procedure mirrors the LLM verifier exactly, but the verifier message now carries the
 image alongside the text:
@@ -38,7 +38,7 @@ import sys
 
 # Reuse the verdict extractor from the normal LLM pipeline, and the backend runners +
 # slug helper from the VLM solver script (same dir).
-SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
 VLM_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SRC_DIR)
 sys.path.insert(0, VLM_DIR)

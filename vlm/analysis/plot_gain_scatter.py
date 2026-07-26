@@ -13,7 +13,7 @@ we plot:
 Each point is coloured by regime (self / intra / cross). Prints Pearson + Spearman over
 the matched cells and writes a scatter PNG + a tidy CSV.
 
-Run:  .venv/bin/python vlm/plot_gain_scatter.py [--dataset charxiv] [--k 5]
+Run:  .venv/bin/python vlm/analysis/plot_gain_scatter.py [--dataset charxiv] [--k 5]
 Outputs: vlm/result/plots/<ds>_gain_vs_resampling.{png,csv}
 """
 import argparse, csv, glob, json, os, re, sys

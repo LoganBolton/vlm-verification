@@ -12,7 +12,7 @@ Inputs (already produced by verifier_gain.py / plot_gain_scatter.py and the runs
   vlm/result/verifier_grid/charxiv_gain.csv
   vlm/result/plots/charxiv_gain_by_regime.png, charxiv_gain_vs_resampling.{png,csv}
   vlm/result/agentic_vision/charxiv_c{2,4,8}/<model>/metrics.json
-Run:  .venv/bin/python vlm/build_charxiv_report.py
+Run:  .venv/bin/python vlm/analysis/build_charxiv_report.py
 Out:  vlm/viz/REPORT.html  (+ regenerates plots/charxiv_zoom_budget.png)
 """
 import base64, bisect, csv, glob, html, json, os, re, shutil
@@ -77,7 +77,7 @@ def _chip(bg, letter):
 
 
 def _asset_b64(name):
-    p = os.path.join(os.path.dirname(__file__), "viz", "assets", name)
+    p = os.path.join(os.path.dirname(os.path.dirname(__file__)), "viz", "assets", name)
     return base64.b64encode(open(p, "rb").read()).decode()
 
 
@@ -741,7 +741,7 @@ VLABEL = {"countbench": "CountBench", "charxiv": "CharXiv", "avg": "Average (bot
 
 def load_all():
     """Load every per-dataset dict plus the combined 'avg' variant. Reusable by main() and by
-    the index.html table-splicer (vlm/update_index_tables.py)."""
+    the index.html table-splicer (vlm/analysis/update_index_tables.py)."""
     DS = ["countbench", "charxiv"]
     grid = {ds: load_grid(ds) for ds in DS}
     base = {ds: base_with_fallback(ds, grid[ds]) for ds in DS}

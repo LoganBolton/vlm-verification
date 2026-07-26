@@ -1,6 +1,6 @@
 """Build one self-contained HTML report across all datasets of the VLM solver/verifier runs.
 
-For each dataset directory (holding the `verify_*.json` grid produced by `vlm/vlm_verify.py`)
+For each dataset directory (holding the `verify_*.json` grid produced by `vlm/pipeline/vlm_verify.py`)
 this emits:
   * a solver-accuracy table,
   * the 3x3 verifier-accuracy grid (with the trivial "accept-all" baseline marked),
@@ -137,7 +137,7 @@ def dataset_section(label, result_dir, fig_dir, views_rel, out_dir):
     if "charxiv" in result_dir.lower():
         note = ("<p class='note'><b>Scoring note:</b> CharXiv answers are free-text. Correctness "
                 "here uses a deterministic <i>relaxed normalized match</i> (see "
-                "<code>vlm/score_charxiv.py</code>), not the reference GPT-4 judge — read absolute "
+                "<code>vlm/pipeline/score_charxiv.py</code>), not the reference GPT-4 judge — read absolute "
                 "accuracies as approximate; the verifier comparisons are internally consistent.</p>")
 
     # view links (relative to the report's directory)

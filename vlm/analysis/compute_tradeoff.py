@@ -7,7 +7,7 @@ Each rejection cell logs per-attempt gflops for the solver and verifier. We turn
 Then we plot accuracy vs total GFLOPs (log-x) and mark the Pareto frontier (best acc per FLOP).
 
 Writes report/figures/{ds}_compute_tradeoff.png and prints a per-model table.
-Run:  .venv/bin/python vlm/compute_tradeoff.py
+Run:  .venv/bin/python vlm/analysis/compute_tradeoff.py
 """
 import json, glob, os, sys
 import matplotlib

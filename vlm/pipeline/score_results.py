@@ -1,4 +1,4 @@
-"""Score a VLM run produced by `vlm/vlm_inference.py`.
+"""Score a VLM run produced by `vlm/pipeline/vlm_inference.py`.
 
 `vlm_inference.py` only records raw model generations -- it does not judge correctness.
 This script is the separate evaluation step: it reads a run file
@@ -10,7 +10,7 @@ Keeping scoring separate means the (expensive) generations can be re-scored anyt
 e.g. after fixing the answer extractor -- without re-running the model.
 
 Usage:
-    python vlm/score_results.py vlm/result/countbench_Qwen3-VL-2B-Instruct_20260607-223800.json
+    python vlm/pipeline/score_results.py vlm/result/countbench_Qwen3-VL-2B-Instruct_20260607-223800.json
 """
 
 from pprint import pprint
@@ -22,7 +22,7 @@ import re
 import sys
 
 # Reuse the boxed-answer helper + matching logic from the normal LLM pipeline.
-SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
 sys.path.insert(0, SRC_DIR)
 from answer_extractors import get_final_box_match  # noqa: E402
 from oracle_verifiers import exact_match  # noqa: E402
@@ -66,7 +66,7 @@ def extract_count(text: str) -> Optional[float]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("results_file", type=str,
-                        help="Run JSON produced by vlm/vlm_inference.py")
+                        help="Run JSON produced by vlm/pipeline/vlm_inference.py")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="Where to write the scores file (default: alongside results_file)")
     return parser.parse_args()

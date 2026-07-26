@@ -43,8 +43,8 @@ sweep_gpu() {
 }
 figures() {
   log "regenerating verifier_gain (F1/FNR + by-regime) + §5.1 scatter"
-  $PYV vlm/verifier_gain.py --dataset charxiv >"$LOGDIR/verifier_gain.out" 2>&1 || true
-  $PYV vlm/plot_gain_scatter.py --dataset charxiv --k 5 >"$LOGDIR/gain_scatter.out" 2>&1 || true
+  $PYV vlm/analysis/verifier_gain.py --dataset charxiv >"$LOGDIR/verifier_gain.out" 2>&1 || true
+  $PYV vlm/analysis/plot_gain_scatter.py --dataset charxiv --k 5 >"$LOGDIR/gain_scatter.out" 2>&1 || true
 }
 
 # run a resumable launcher until its done-count reaches target; stall-abort after 4 no-progress tries

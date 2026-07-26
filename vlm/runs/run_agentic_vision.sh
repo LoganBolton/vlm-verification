@@ -63,7 +63,7 @@ for DS in $DATASETS; do
       LOGF="$LOGDIR/av_${DS}_c${CROPS}_${SS}.log"
       wait_gpu || true   # ensure prior run fully released VRAM before TP init
       log "START $DS c=$CROPS solver=$SS"
-      if $PY vlm/agentic_vision.py --solver_model_name "$SOLVER" \
+      if $PY vlm/pipeline/agentic_vision.py --solver_model_name "$SOLVER" \
             --data_dir "data/$DS" --max_crops "$CROPS" \
             --solver_max_model_len "$(mml_for "$SOLVER")" --solver_max_new_tokens "$MNT" \
             --output_dir "$OUT" >"$LOGF" 2>&1; then

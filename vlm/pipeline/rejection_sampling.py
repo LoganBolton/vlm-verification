@@ -14,7 +14,7 @@ correctness comes from the dataset-specific scorer (countbench integer match /
 charxiv strict final-answer match).
 
 Usage:
-    python vlm/rejection_sampling.py \
+    python vlm/pipeline/rejection_sampling.py \
         --solver_model_name Qwen/Qwen3-VL-8B-Instruct \
         --verifier_model_name google/gemma-4-12B-it \
         --data_dir data/countbench --max_attempts 5 \

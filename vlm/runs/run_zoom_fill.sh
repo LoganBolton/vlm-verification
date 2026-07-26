@@ -28,7 +28,7 @@ log "run_agentic_vision returned"
 
 if [[ -f "$CELL" ]]; then
   log "cell filled -- rebuilding report"
-  .venv/bin/python vlm/build_charxiv_report.py >>"$LOGDIR/zoom_fill_report.out" 2>&1 \
+  .venv/bin/python vlm/analysis/build_charxiv_report.py >>"$LOGDIR/zoom_fill_report.out" 2>&1 \
     && log "report rebuilt" || log "report rebuild failed (non-fatal)"
   touch "$DONE_MARK"
   log "===== ZOOM FILL DONE ====="

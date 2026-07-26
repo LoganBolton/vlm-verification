@@ -5,7 +5,7 @@ report/index.html is HAND-EDITED prose. This script surgically swaps ONLY the pe
 table for the AVERAGE-across-both-datasets, PERCENT-ONLY version (base acc kept as the anchor,
 comparison columns shown as relative % change). All prose is preserved; a .bak is written first.
 
-Re-run whenever the underlying data changes:  .venv/bin/python vlm/update_index_tables.py
+Re-run whenever the underlying data changes:  .venv/bin/python vlm/analysis/update_index_tables.py
 """
 import re, shutil, sys, os
 sys.path.insert(0, os.path.dirname(__file__))

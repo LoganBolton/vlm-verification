@@ -15,8 +15,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT = os.path.join(os.path.dirname(__file__), "result", "rejection", "countbench")
-OUT  = os.path.join(os.path.dirname(__file__), "result", "plots")
+ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "result", "rejection", "countbench")
+OUT  = os.path.join(os.path.dirname(os.path.dirname(__file__)), "result", "plots")
 os.makedirs(OUT, exist_ok=True)
 
 def metrics(run):

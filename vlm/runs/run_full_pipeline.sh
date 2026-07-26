@@ -55,8 +55,8 @@ log_status "================ PIPELINE START ================"
 log_status "models: ${MODELS[*]}"
 
 # DATASET   DATADIR            SCORER
-DATASETS=("countbench:data/countbench:vlm/score_results.py"
-          "charxiv:data/charxiv:vlm/score_charxiv.py")
+DATASETS=("countbench:data/countbench:vlm/pipeline/score_results.py"
+          "charxiv:data/charxiv:vlm/pipeline/score_charxiv.py")
 
 for entry in "${DATASETS[@]}"; do
   IFS=":" read -r DS DATADIR SCORER <<<"$entry"
@@ -71,7 +71,7 @@ for entry in "${DATASETS[@]}"; do
     MS=$(short_for "$M")
     MML=$(mml_for "$M")
     run_step "solve  $DS/$MS" "$LOGDIR/solve_${DS}_${MS}.log" \
-      $PY vlm/vlm_inference.py \
+      $PY vlm/pipeline/vlm_inference.py \
         --solver_model_name "$M" --data_dir "$DATADIR" \
         --backend "$BACKEND" $MML $SUBSET_ARG --output_dir "$RDIR"
 
@@ -98,7 +98,7 @@ for entry in "${DATASETS[@]}"; do
     VS=$(short_for "$V")
     VMML=$(mml_for "$V")
     run_step "verify $DS/verifier=$VS" "$LOGDIR/verify_${DS}_${VS}.log" \
-      $PY vlm/vlm_verify.py \
+      $PY vlm/pipeline/vlm_verify.py \
         --verifier_model_name "$V" --backend "$BACKEND" $VMML \
         --output_dir "$RDIR" \
         --solver_run_files "${SCORED_FILES[@]}"

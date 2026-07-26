@@ -43,7 +43,7 @@ GRID_DS=charxiv GRID_MODELS="$M13" bash vlm/runs/run_rejection.sh >>"$LOGDIR/ove
 log "STEP 3/3 returned"
 
 # refresh the §5.1 predicted-vs-realized figures/report off the new rejection data
-.venv/bin/python vlm/build_charxiv_report.py >>"$LOGDIR/overnight_rej_report.out" 2>&1 \
+.venv/bin/python vlm/analysis/build_charxiv_report.py >>"$LOGDIR/overnight_rej_report.out" 2>&1 \
   && log "report rebuilt" || log "report rebuild skipped/failed"
 
 touch "$DONE_MARK"

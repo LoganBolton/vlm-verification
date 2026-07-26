@@ -43,7 +43,7 @@ log "CountBench verifier grid returned"
 
 # ---- 3. gain analysis ----
 log "computing CountBench verifier gain"
-$PYV vlm/verifier_gain.py --dataset countbench >>"$LOGDIR/phase4_gain.out" 2>&1 \
+$PYV vlm/analysis/verifier_gain.py --dataset countbench >>"$LOGDIR/phase4_gain.out" 2>&1 \
   && log "verifier_gain countbench OK -> vlm/result/verifier_grid/countbench/countbench_gain.csv" \
   || log "verifier_gain countbench FAILED -- see phase4_gain.out"
 

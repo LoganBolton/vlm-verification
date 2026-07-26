@@ -1,7 +1,7 @@
 """Verifier Gain: turn the solver x verifier confusion matrices into the paper's metric.
 
 Replicates the core analysis of "When Does Verification Pay Off?" (Lu et al.) for VLMs.
-Reads the per-pair files produced by vlm/vlm_verify.py (vlm/result/verifier_grid/<ds>/), and
+Reads the per-pair files produced by vlm/pipeline/vlm_verify.py (vlm/result/verifier_grid/<ds>/), and
 for each (solver, verifier) computes, from the verifier's confusion matrix on the solver's
 solutions + the solver pass rate p:
 
@@ -20,7 +20,7 @@ We report VERIFIER GAIN = acc(inf) - p = prec - p  (headline), plus acc(k) for k
 A negative gain means the verifier HURTS rejection sampling (accepts wrong answers as
 readily as right ones). Each pair is tagged self / intra-family / cross-family.
 
-Run:  .venv/bin/python vlm/verifier_gain.py [--dataset charxiv]
+Run:  .venv/bin/python vlm/analysis/verifier_gain.py [--dataset charxiv]
 Outputs: vlm/result/verifier_grid/<ds>_gain.csv  + printed matrices.
 """
 import argparse, csv, glob, json, os, re

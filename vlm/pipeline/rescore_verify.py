@@ -12,7 +12,7 @@ Because the model outputs (`verifier_response`) are untouched, this is a pure, r
 re-scoring; only parsing-derived fields and metrics change.
 
 Usage:
-    python vlm/rescore_verify.py vlm/result/verify_*.json
+    python vlm/pipeline/rescore_verify.py vlm/result/verify_*.json
 """
 
 import argparse

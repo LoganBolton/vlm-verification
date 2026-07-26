@@ -10,7 +10,7 @@ This script scans all of them and emits ONE csv (vlm/result/ALL_RESULTS.csv) wit
 (dataset, model, method, variant) plus the source path, then prints a coverage matrix so the
 gaps are obvious. It is the single source of truth -- read this, not the scattered dirs.
 
-Run:  .venv/bin/python vlm/collate_results.py
+Run:  .venv/bin/python vlm/analysis/collate_results.py
 """
 import csv, glob, json, os, re
 

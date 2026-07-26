@@ -5,8 +5,11 @@ Analysis of which test-time compute methods help small VLMs.
 **Full write-up: https://loganbolton.github.io/blog/vlm-verification/**
 
 
-- `vlm/` — all experiment code: solving (`vlm_inference.py`), verification (`vlm_verify.py`), rejection sampling, self-consistency, agentic zoom (`agentic_vision.py`), scoring, and plotting
+- `vlm/pipeline/` — experiment code: solving (`vlm_inference.py`), verification (`vlm_verify.py`), rejection sampling, self-consistency, agentic zoom (`agentic_vision.py`), and scoring
+- `vlm/analysis/` — verifier-gain metrics, compute-tradeoff analysis, and plotting
 - `vlm/runs/` — the shell scripts that drove the actual runs
+- `vlm/viz/` — per-example HTML result viewers
+- `vlm/hf/` — export/verify raw logs to Hugging Face
 - `prompts/` — solver / verifier / zoom-agent prompts
 - `scripts/`, `data/` — dataset download scripts and metadata
 - `report/` — source for the write-up and its figures

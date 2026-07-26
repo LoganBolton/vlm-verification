@@ -2,7 +2,7 @@
 # Solver x Verifier grid for the "When Does Verification Pay Off?" replication (VLM version).
 # CharXiv only for now. Each VERIFIER model judges every SOLVER's existing base scored run
 # (no new solver generation needed), producing one confusion matrix per (solver, verifier)
-# pair via vlm/vlm_verify.py. Verifier gain is computed afterwards from these matrices.
+# pair via vlm/pipeline/vlm_verify.py. Verifier gain is computed afterwards from these matrices.
 #
 # The grid is square: every model in GRID_MODELS is used as both a solver (its base run is
 # judged) and a verifier (it judges everyone). self = (m,m); intra-family = same family,
@@ -91,7 +91,7 @@ for V in $GRID_MODELS; do
     CHUNK_FILES=("${TODO_FILES[@]:$ci:$CHUNK}")
     wait_gpu || true
     log "START verifier=$VS chunk@$ci (${#CHUNK_FILES[@]} solvers)"
-    if $PY vlm/vlm_verify.py --verifier_model_name "$V" $(extra_for "$V") $LIMARG \
+    if $PY vlm/pipeline/vlm_verify.py --verifier_model_name "$V" $(extra_for "$V") $LIMARG \
           --solver_run_files "${CHUNK_FILES[@]}" --output_dir "$OUTDIR" >>"$LOGF" 2>&1; then
       log "OK    verifier=$VS chunk@$ci"; NDONE=$((NDONE+1))
     else

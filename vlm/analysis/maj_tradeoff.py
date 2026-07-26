@@ -7,7 +7,7 @@ compute = k * (solver_gflops / n_samples). We draw one curve per model: accuracy
 grows 1->N, so you can see where extra samples stop paying off. Same axes/style as compute_tradeoff.py.
 
 Writes report/figures/{ds}_maj_tradeoff.png (+ an 'avg' over both datasets). Run:
-  .venv/bin/python vlm/maj_tradeoff.py
+  .venv/bin/python vlm/analysis/maj_tradeoff.py
 """
 import json, glob, os, sys
 import matplotlib

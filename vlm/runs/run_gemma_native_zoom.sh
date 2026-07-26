@@ -31,7 +31,7 @@ for SOLVER in $MODELS; do
     mkdir -p "$OUT"
     wait_gpu || true
     log "START charxiv c=$C solver=$SS (gemma-native)"
-    if $PY vlm/agentic_vision.py --solver_model_name "$SOLVER" --solver_max_model_len 32768 \
+    if $PY vlm/pipeline/agentic_vision.py --solver_model_name "$SOLVER" --solver_max_model_len 32768 \
           --data_dir data/charxiv --max_crops "$C" --solver_max_new_tokens 4096 \
           --output_dir "$OUT" >"$LOGDIR/av_charxiv_c${C}_${SS}.log" 2>&1; then
       log "OK    charxiv c=$C $SS"
@@ -45,7 +45,7 @@ for SOLVER in $MODELS; do
 done
 
 log "all gemma-native charxiv zoom done -- rebuilding report"
-.venv/bin/python vlm/build_charxiv_report.py >>"$LOGDIR/gemma_native_report.out" 2>&1 && log "report rebuilt"
+.venv/bin/python vlm/analysis/build_charxiv_report.py >>"$LOGDIR/gemma_native_report.out" 2>&1 && log "report rebuilt"
 
 log "resuming paused CountBench grid (phase 4 supervisor + watchdog)"
 setsid bash vlm/runs/run_phase4_countbench.sh >>"$LOGDIR/phase4_supervisor.out" 2>&1 </dev/null &

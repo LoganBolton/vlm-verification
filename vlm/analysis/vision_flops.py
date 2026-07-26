@@ -17,12 +17,13 @@ Two ingredients, both measured from the *actual* local artifacts (no hand-typed 
 
 Results are cached to vlm/result/vision_flops.json so the tradeoff scripts read them cheaply.
 
-Run once to (re)build the cache:  .venv-vllm/bin/python vlm/vision_flops.py
+Run once to (re)build the cache:  .venv-vllm/bin/python vlm/analysis/vision_flops.py
 """
 import json, os, struct, glob, sys, random
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE = os.path.join(HERE, "result", "vision_flops.json")
+VLM_DIR = os.path.dirname(HERE)
+CACHE = os.path.join(VLM_DIR, "result", "vision_flops.json")
 HF_HUB = os.path.expanduser("~/.cache/huggingface/hub")
 
 # tensor-name substrings that identify the vision *encoder* (exclude the mm projector, which is
@@ -129,7 +130,7 @@ def patches_per_image(repo_id, image_paths, sample=160, seed=0):
 
 
 def _dataset_images(ds):
-    meta = os.path.join(HERE, "..", "data", ds, "metadata.jsonl")
+    meta = os.path.join(os.path.dirname(VLM_DIR), "data", ds, "metadata.jsonl")
     root = os.path.dirname(meta)
     paths = []
     for line in open(meta):
@@ -146,7 +147,7 @@ def load_cache():
 
 def build(datasets=("charxiv", "countbench")):
     """Measure vit_params + patches_per_image for every model in MODEL_SIZES; cache to disk."""
-    sys.path.insert(0, HERE)
+    sys.path.insert(0, os.path.join(VLM_DIR, "pipeline"))
     from rejection_sampling import MODEL_SIZES
     cache = load_cache()
     imgs = {ds: _dataset_images(ds) for ds in datasets}

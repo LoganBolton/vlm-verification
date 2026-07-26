@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rejection-sampling queue: runs vlm/rejection_sampling.py for a list of
+# Rejection-sampling queue: runs vlm/pipeline/rejection_sampling.py for a list of
 # (dataset, solver, verifier|oracle) combos, sequentially. Waits for any running
 # scale-pipeline to finish first, so it can be queued while the GPUs are busy.
 #
@@ -149,7 +149,7 @@ for entry in "${RUNS[@]}"; do
   LOGF="$LOGDIR/reject_${DS}_${SS}__${VS}.log"
   wait_gpus_free            # ensure both GPUs are free so TP=2 solvers don't fail at init
   log_status "START  $DS solver=$SS verifier=$VS"
-  if $PY vlm/rejection_sampling.py \
+  if $PY vlm/pipeline/rejection_sampling.py \
       --solver_model_name "$SOLVER" $(extra_for solver "$SOLVER") \
       $VARGS $MRC \
       --data_dir "data/$DS" --max_attempts 5 \
