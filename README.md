@@ -1,10 +1,9 @@
 # vlm-verification
 
-Does self-verification actually help small vision language models? Solver/verifier experiments (rejection sampling, self-consistency, agentic zoom) with open VLMs on CharXiv and CountBenchQA.
+Analysis of which test-time compute methods help small VLMs.
 
 **Full write-up: https://loganbolton.github.io/blog/vlm-verification/**
 
-## Layout
 
 - `vlm/` — all experiment code: solving (`vlm_inference.py`), verification (`vlm_verify.py`), rejection sampling, self-consistency, agentic zoom (`agentic_vision.py`), scoring, and plotting
 - `vlm/runs/` — the shell scripts that drove the actual runs
