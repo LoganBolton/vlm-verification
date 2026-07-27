@@ -217,8 +217,8 @@ def render(ds, metrics, title=None):
     ax.axhline(metrics["avg_at_1"], color="0.5", lw=1.0, ls="-.",
                label="avg single model")
     ax.set_xticks(ks)
-    ax.set_xlabel("number of models in the ensemble")
-    ax.set_ylabel("accuracy")
+    ax.set_xlabel("Number of Models in the Ensemble")
+    ax.set_ylabel("Accuracy")
     ax.set_title(title or f"Cross-model majority vote — {ds}  "
                  f"(ensemble of all {M} = {metrics['ensemble_acc']:.3f})")
     ax.grid(alpha=0.3)
@@ -226,7 +226,7 @@ def render(ds, metrics, title=None):
     fig.tight_layout()
     os.makedirs(FIGDIR, exist_ok=True)
     out = f"{FIGDIR}/{ds}_model_majority.png"
-    fig.savefig(out, dpi=200); plt.close(fig)
+    fig.savefig(out, dpi=300); plt.close(fig)
     return out
 
 

@@ -537,10 +537,10 @@ def render_zoom(zoomdata, base, pngpath, acc_label):
         xs = [b for b in budgets if b in data[m]]
         ys = [data[m][b] for b in xs]
         ax.plot(xs, ys, "-o", color=cmap(i % 10), label=short(m), lw=1.8, ms=5)
-    ax.set_xlabel("zoom budget (max crops)"); ax.set_ylabel(f"{acc_label} accuracy")
-    ax.set_xticks(budgets); ax.set_title(f"Agentic-zoom: accuracy vs budget — {acc_label}")
+    ax.set_xlabel("Zoom Budget (max crops)"); ax.set_ylabel(f"{acc_label} Accuracy")
+    ax.set_xticks(budgets); ax.set_title(f"Agentic Zoom: Accuracy vs Budget — {acc_label}")
     ax.legend(fontsize=8, ncol=2); ax.grid(alpha=0.3)
-    fig.tight_layout(); fig.savefig(pngpath, dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(pngpath, dpi=300); plt.close(fig)
 
     t = ["<table class=mx><tr><th class=rowh>model</th><th>base<br>acc</th>" +
          "".join(f"<th>c{b}<br>(Δ)</th>" for b in budgets) + "</tr>"]
@@ -578,11 +578,11 @@ def plot_regime_bar(rows, pngpath, title):
     fig, ax = plt.subplots(figsize=(4.4, 3.4))
     ax.bar(regs, means, color=[_REG_COLOR[r] for r in regs])
     ax.axhline(0, color="#333", lw=0.8)
-    ax.set_ylabel("mean judge gain"); ax.set_title(title)
+    ax.set_ylabel("Mean Judge Gain"); ax.set_title(title)
     for i, v in enumerate(means):
         ax.text(i, v, f"{v:+.3f}", ha="center", va="bottom" if v >= 0 else "top", fontsize=9)
     ax.grid(axis="y", alpha=0.3); fig.tight_layout()
-    fig.savefig(pngpath, dpi=130); plt.close(fig)
+    fig.savefig(pngpath, dpi=300); plt.close(fig)
 
 
 def plot_actual_regime_points(rows, pngpath):
@@ -611,11 +611,11 @@ def plot_actual_regime_points(rows, pngpath):
     ax.set_xticks(xs)
     ax.set_xticklabels([f"{r.capitalize()}\n(n={len(by[r])})" for r in regs])
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y*100:.0f}%"))
-    ax.set_ylabel("Relative accuracy increase vs baseline")
+    ax.set_ylabel("Relative Accuracy Increase vs Baseline")
     ax.set_title("Accuracy Gain by Judge Type")
     ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()
-    fig.savefig(pngpath, dpi=150)
+    fig.savefig(pngpath, dpi=300)
     plt.close(fig)
 
 
@@ -760,6 +760,190 @@ def load_all():
     cross["avg"] = compute_realized(s51["avg"], "cross", base["avg"])
     crossbest["avg"] = compute_realized_best(s51["avg"], "cross", base["avg"])
     return dict(grid=grid, base=base, maj5=maj5, zoom=zoom, cross=cross, crossbest=crossbest, s51=s51)
+
+
+# Self-contained image lightbox / gallery. Click any figure: it flies out of the page into a
+# full-screen overlay with zoom buttons + live zoom-%, ‹ › navigation across all figures (with a
+# counter and the alt text as caption), wheel-zoom at the cursor, drag-to-pan, pinch-zoom on touch,
+# double-click toggle, and keys (← → navigate, +/− zoom, 0 fit, Esc close). Closing animates the
+# figure back to its spot. Images inside links (e.g. footer logos) are left alone.
+# Appended verbatim to both report outputs.
+LIGHTBOX = """
+<div id=lb hidden>
+  <div id=lb-bar>
+    <span id=lb-pct>100%</span>
+    <button id=lb-in title="zoom in (+)">+</button>
+    <button id=lb-out title="zoom out (&minus;)">&minus;</button>
+    <button id=lb-fit title="fit (0)">&#8634;</button>
+    <button id=lb-x title="close (Esc)">&#10005;</button>
+  </div>
+  <button id=lb-prev class=lb-nav title="previous (&larr;)" hidden>&#8249;</button>
+  <button id=lb-next class=lb-nav title="next (&rarr;)" hidden>&#8250;</button>
+  <img id=lb-img alt="">
+  <div id=lb-cap><span id=lb-alt></span><span id=lb-count></span></div>
+</div>
+<style>
+img{cursor:zoom-in}
+a img,.lg{cursor:inherit}
+#lb{position:fixed;inset:0;background:rgba(12,14,18,.93);z-index:1000;overflow:hidden;
+    touch-action:none;opacity:0;transition:opacity .25s}
+#lb.open{opacity:1}
+#lb[hidden]{display:none}
+#lb-img{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none;user-select:none;
+        -webkit-user-drag:none;cursor:grab;transition:opacity .2s}
+#lb-img.anim{transition:transform .32s cubic-bezier(.2,.75,.25,1),opacity .2s}
+#lb.dragging #lb-img{cursor:grabbing;transition:none}
+#lb-bar{position:absolute;top:14px;right:14px;display:flex;gap:8px;z-index:2;align-items:center}
+#lb-pct{color:#fff;opacity:.7;font:600 .85rem/1 -apple-system,Segoe UI,Roboto,sans-serif;
+        min-width:3.4em;text-align:right;font-variant-numeric:tabular-nums}
+#lb-bar button,.lb-nav{border:0;border-radius:8px;background:rgba(255,255,255,.15);color:#fff;cursor:pointer}
+#lb-bar button{width:40px;height:40px;font-size:1.15rem;line-height:1}
+#lb-bar button:hover,.lb-nav:hover{background:rgba(255,255,255,.3)}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:46px;height:72px;
+        font-size:2rem;line-height:1}
+.lb-nav[hidden]{display:none}
+#lb-prev{left:12px}#lb-next{right:12px}
+#lb-cap{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:2;display:flex;
+        gap:1rem;align-items:baseline;background:rgba(0,0,0,.5);color:#e8ebef;padding:.4rem .9rem;
+        border-radius:8px;font:.85rem/1.3 -apple-system,Segoe UI,Roboto,sans-serif;max-width:86vw}
+#lb-count{opacity:.65;white-space:nowrap;font-variant-numeric:tabular-nums}
+</style>
+<script>
+(function(){
+  var lb=document.getElementById('lb'),img=document.getElementById('lb-img'),
+      pct=document.getElementById('lb-pct'),cap=document.getElementById('lb-alt'),
+      cnt=document.getElementById('lb-count'),
+      prev=document.getElementById('lb-prev'),next=document.getElementById('lb-next'),
+      imgs=[],cur=-1,s=1,minS=1,tx=0,ty=0;
+  function eligible(t){return t.tagName==='IMG'&&!t.closest('a')&&!t.closest('#lb');}
+  function apply(anim){
+    img.classList.toggle('anim',!!anim);
+    img.style.transform='translate('+tx+'px,'+ty+'px) scale('+s+')';
+    pct.textContent=Math.round(s*100)+'%';
+  }
+  function fitVals(){
+    var iw=img.naturalWidth||1,ih=img.naturalHeight||1,
+        fs=Math.min(innerWidth*.92/iw,innerHeight*.88/ih);
+    return {s:fs,tx:(innerWidth-iw*fs)/2,ty:(innerHeight-ih*fs)/2};
+  }
+  function fit(anim){var f=fitVals();minS=s=f.s;tx=f.tx;ty=f.ty;apply(anim);}
+  function zoomAt(cx,cy,f,anim){
+    var ns=Math.min(Math.max(s*f,minS*.5),Math.max(minS*16,8));
+    tx=cx-(cx-tx)*ns/s;ty=cy-(cy-ty)*ns/s;s=ns;apply(anim);
+  }
+  function caption(){
+    var el=imgs[cur];
+    cap.textContent=el.alt||(el.src||'').split('/').pop().split('?')[0];
+    cnt.textContent=imgs.length>1?(cur+1)+' / '+imgs.length:'';
+    prev.hidden=next.hidden=imgs.length<2;
+  }
+  function thumbVals(){
+    var r=imgs[cur].getBoundingClientRect();
+    return {s:r.width/(img.naturalWidth||1),tx:r.left,ty:r.top};
+  }
+  function flyIn(){
+    var t=thumbVals();s=t.s;tx=t.tx;ty=t.ty;apply(false);
+    var f=fitVals();minS=f.s;
+    requestAnimationFrame(function(){requestAnimationFrame(function(){
+      s=f.s;tx=f.tx;ty=f.ty;apply(true);});});
+  }
+  function show(i,fly){
+    cur=(i+imgs.length)%imgs.length;
+    caption();
+    img.style.opacity=0;
+    img.src=imgs[cur].currentSrc||imgs[cur].src;
+    var go=function(){img.style.opacity=1;if(fly)flyIn();else fit(false);};
+    if(img.complete&&img.naturalWidth)go();else img.onload=go;
+    [1,-1].forEach(function(d){
+      var n=imgs[(cur+d+imgs.length)%imgs.length];
+      if(n&&n!==imgs[cur]){var p=new Image();p.src=n.currentSrc||n.src;}});
+  }
+  function open(i){
+    document.body.style.overflow='hidden';
+    lb.hidden=false;
+    requestAnimationFrame(function(){lb.classList.add('open');});
+    show(i,true);
+  }
+  function close(){
+    var r=imgs[cur]&&imgs[cur].getBoundingClientRect();
+    if(r&&r.bottom>0&&r.top<innerHeight){var t=thumbVals();s=t.s;tx=t.tx;ty=t.ty;apply(true);}
+    lb.classList.remove('open');
+    document.body.style.overflow='';
+    setTimeout(function(){lb.hidden=true;img.removeAttribute('src');},280);
+  }
+  document.addEventListener('click',function(e){
+    if(eligible(e.target)){
+      imgs=[].filter.call(document.images,eligible);
+      open(imgs.indexOf(e.target));
+    }
+  });
+  prev.onclick=function(){show(cur-1,false);};
+  next.onclick=function(){show(cur+1,false);};
+  document.getElementById('lb-in').onclick=function(){zoomAt(innerWidth/2,innerHeight/2,1.5,true);};
+  document.getElementById('lb-out').onclick=function(){zoomAt(innerWidth/2,innerHeight/2,1/1.5,true);};
+  document.getElementById('lb-fit').onclick=function(){fit(true);};
+  document.getElementById('lb-x').onclick=close;
+  lb.addEventListener('wheel',function(e){
+    e.preventDefault();
+    zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*.0015),false);
+  },{passive:false});
+  lb.addEventListener('dblclick',function(e){
+    if(e.target.closest('button'))return;
+    if(s>minS*1.01)fit(true);else zoomAt(e.clientX,e.clientY,2.5,true);
+  });
+  /* one pointer = pan (from the image) or click-to-close (from the backdrop); two = pinch-zoom */
+  var ptrs=new Map(),pd=0,moved=false,downOnBack=false;
+  lb.addEventListener('pointerdown',function(e){
+    if(e.target.closest('button'))return;
+    ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    lb.setPointerCapture(e.pointerId);
+    if(ptrs.size===1){moved=false;downOnBack=(e.target===lb);}
+    if(ptrs.size===2){
+      var a=Array.from(ptrs.values());
+      pd=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    }
+    if(e.target===img){lb.classList.add('dragging');e.preventDefault();}
+  });
+  lb.addEventListener('pointermove',function(e){
+    var p=ptrs.get(e.pointerId);
+    if(!p)return;
+    if(ptrs.size===2){
+      p.x=e.clientX;p.y=e.clientY;
+      var a=Array.from(ptrs.values()),
+          d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+      if(pd)zoomAt((a[0].x+a[1].x)/2,(a[0].y+a[1].y)/2,d/pd,false);
+      pd=d;moved=true;
+    }else{
+      var dx=e.clientX-p.x,dy=e.clientY-p.y;
+      if(Math.abs(dx)+Math.abs(dy)>2)moved=true;
+      if(moved&&!downOnBack){tx+=dx;ty+=dy;apply(false);}
+      p.x=e.clientX;p.y=e.clientY;
+    }
+  });
+  function up(e){
+    ptrs.delete(e.pointerId);pd=0;
+    if(!ptrs.size){
+      lb.classList.remove('dragging');
+      if(downOnBack&&!moved)close();
+    }
+  }
+  lb.addEventListener('pointerup',up);
+  lb.addEventListener('pointercancel',up);
+  addEventListener('keydown',function(e){
+    if(lb.hidden||e.ctrlKey||e.metaKey||e.altKey)return;
+    if(e.key==='Escape')close();
+    else if(e.key==='ArrowLeft')show(cur-1,false);
+    else if(e.key==='ArrowRight')show(cur+1,false);
+    else if(e.key==='+'||e.key==='=')zoomAt(innerWidth/2,innerHeight/2,1.5,true);
+    else if(e.key==='-')zoomAt(innerWidth/2,innerHeight/2,1/1.5,true);
+    else if(e.key==='0')fit(true);
+    else return;
+    e.preventDefault();
+  });
+  addEventListener('resize',function(){if(!lb.hidden)fit(false);});
+})();
+</script>
+"""
 
 
 def main():
@@ -923,6 +1107,7 @@ def main():
         P.append("<div class=grid2><div>" + extimg(f"{PLOTS}/{vk}_zoom_report.png", "max-width:520px") + "</div>")
         P.append("<div class=card>" + zoom_tbl[vk] + "</div></div>")
 
+    P.append(LIGHTBOX)
     doc = "\n".join(P)
     os.makedirs(REPORT_DIR, exist_ok=True)
     with open(GEN_OUT, "w") as f:                     # always-fresh canonical render

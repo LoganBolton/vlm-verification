@@ -326,8 +326,8 @@ def render(ds, data, title=None, ymin=None, mm=None):
 
     ax.legend(handles=handles, fontsize=8, loc="lower right", title="Pareto frontier per strategy")
     ax.set_xscale("log")
-    ax.set_xlabel("Average Inference Compute Per Query (higher is worse)")
-    ax.set_ylabel("accuracy")
+    ax.set_xlabel("Average Inference GFLOPs per Query (higher is worse)")
+    ax.set_ylabel("Accuracy")
     ax.set_title(title or "Compute vs Accuracy Tradeoff Across Strategies")
     ax.grid(alpha=0.3, which="both")
     right = 1.1e5                    # cut the x-axis off around 10^5 (all frontier points sit well left)
@@ -375,7 +375,7 @@ def render(ds, data, title=None, ymin=None, mm=None):
             ax.annotate("", xy=(px, py), xytext=(ex, ey), zorder=3,
                         arrowprops=dict(arrowstyle="-", color="0.5", lw=0.5, shrinkA=2, shrinkB=4))
     out = f"{FIGDIR}/{ds}_combined_tradeoff.png"
-    fig.savefig(out, dpi=130); plt.close(fig)
+    fig.savefig(out, dpi=300); plt.close(fig)
     return out
 
 

@@ -152,15 +152,15 @@ def render(ds, solo, best, title=None):
     ax.plot([p[0] for p in fr], [p[1] for p in fr], "-", color="crimson",
             lw=2, zorder=1, label="Pareto frontier (real)")
     ax.set_xscale("log")
-    ax.set_xlabel("total inference compute  (GFLOPs, whole dataset, log scale)")
-    ax.set_ylabel("accuracy")
+    ax.set_xlabel("Total Inference FLOPs (GFLOPs, whole dataset, log scale)")
+    ax.set_ylabel("Accuracy")
     ax.set_title(title or f"Compute vs accuracy — {ds}\n"
                           "(o = model solo,  ◇ = same model + its best judge)")
     ax.grid(alpha=0.3, which="both")
     ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
     out = f"{FIGDIR}/{ds}_compute_tradeoff.png"
-    fig.savefig(out, dpi=130); plt.close(fig)
+    fig.savefig(out, dpi=300); plt.close(fig)
     return out, fr
 
 

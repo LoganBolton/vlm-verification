@@ -154,7 +154,7 @@ def main():
                     va="bottom" if means[r] >= 0 else "top", fontsize=10)
         ax.axhline(0, color="black", lw=0.6)
         ax.set_xticks(list(xs)); ax.set_xticklabels([f"{r}\n(n={len(byreg[r])})" for r in regs])
-        ax.set_ylabel("verifier gain (precision - solver acc)")
+        ax.set_ylabel("Verifier Gain (precision − solver acc)")
         ax.set_title(f"{args.dataset}: verifier gain by regime")
         fig.tight_layout()
         png = f"{out_dir}/{args.dataset}_gain_by_regime.png"

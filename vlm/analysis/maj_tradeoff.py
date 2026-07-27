@@ -58,14 +58,14 @@ def render(ds, curves, title=None):
         ax.annotate(name(m), (xs[0], ys[0]), fontsize=7, xytext=(4, 3),
                     textcoords="offset points")
     ax.set_xscale("log")
-    ax.set_xlabel("total inference compute  (GFLOPs, whole dataset, log scale)")
-    ax.set_ylabel("accuracy")
+    ax.set_xlabel("Total Inference FLOPs (GFLOPs, whole dataset, log scale)")
+    ax.set_ylabel("Accuracy")
     ax.set_title(title or f"Compute vs accuracy — maj@n voting — {ds}\n"
                           f"(each curve = one model, N=1→{NMAX} samples)")
     ax.grid(alpha=0.3, which="both")
     fig.tight_layout()
     out = f"{FIGDIR}/{ds}_maj_tradeoff.png"
-    fig.savefig(out, dpi=130); plt.close(fig)
+    fig.savefig(out, dpi=300); plt.close(fig)
     return out
 
 
